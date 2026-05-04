@@ -66,6 +66,9 @@ def parse_args():
     p.add_argument("--topk", type=int, default=20)
     p.add_argument("--l-buf", type=int, default=0,
                    help="How many buffer keys to feed at probe time.")
+    p.add_argument("--n-growth", type=int, default=BUFFER_SIZE * 4,
+                   help="Match to bench.py's K_cap by setting this to "
+                        "n_decode + BUFFER_SIZE.")
     p.add_argument("--iters", type=int, default=20)
     return p.parse_args()
 
@@ -97,7 +100,7 @@ def main():
 
     print(f"H_q={H_q} H_kv={H_kv} D={D} prefill={n_prefill} l_buf={args.l_buf}")
 
-    cfg = TAIndexConfig(n_growth=BUFFER_SIZE * 4)
+    cfg = TAIndexConfig(n_growth=args.n_growth)
     index = TAIndex(cfg)
     index.build(
         keys[:, :n_prefill, :].contiguous(),

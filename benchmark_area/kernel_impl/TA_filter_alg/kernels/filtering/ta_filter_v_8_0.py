@@ -143,16 +143,25 @@ def ta_filter_v7_10(q, threshold, state, q_head_to_kv=None, *, return_aux=False)
     ws = _workspace_v710(device=q.device, h_q=h_q, s_sub=int(s_sub), n_pad=n_pad)
     ext = _load_ext()
 
+    K_stride = int(centers.shape[2])
+    K_used = int(state.get("K_used", k_clusters))
+    K_eff = min(K_used, K_stride) if K_used > 0 else K_stride
+    N_eff = int(state.get("N_used", n_pad))
     ext.fused_pipeline(
         q, centers, dim_offsets, dim_widths, q_head_to_kv, threshold,
         assigns_packed,
         ws["top_scores"], ws["top_indices"], ws["depth"], ws["live_idx"], ws["live_count"],
-        int(k_clusters), 2048,
+        int(K_eff), int(K_stride), int(N_eff), 2048,
     )
 
     if return_aux:
         return ws["live_idx"], ws["live_count"], ws["depth"]
     return ws["live_idx"], ws["live_count"]
+
+
+# v7.11 wrapper uses _TILE_N_V711=4096 and same K_eff/N_eff pattern.
+# (Kept above — replace_all caught both call sites.)
+_v7_11_marker = True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -209,11 +218,14 @@ def ta_filter_v7_11(q, threshold, state, q_head_to_kv=None, *, return_aux=False)
     ws = _workspace_v711(device=q.device, h_q=h_q, s_sub=int(s_sub), n_pad=n_pad)
     ext = _load_ext()
 
+    K_stride = int(centers.shape[2])
+    K_used = int(state.get("K_used", k_clusters))
+    K_eff = min(K_used, K_stride) if K_used > 0 else K_stride
     ext.fused_pipeline(
         q, centers, dim_offsets, dim_widths, q_head_to_kv, threshold,
         assigns_packed,
         ws["top_scores"], ws["top_indices"], ws["depth"], ws["live_idx"], ws["live_count"],
-        int(k_clusters), _TILE_N_V711,
+        int(K_eff), int(K_stride), _TILE_N_V711,
     )
 
     if return_aux:

@@ -9,6 +9,8 @@ void ta_filter_v7_10_fused_launch(
     torch::Tensor top_scores, torch::Tensor top_indices,
     torch::Tensor depth, torch::Tensor live_idx, torch::Tensor live_count,
     int64_t k_clusters,
+    int64_t k_stride,
+    int64_t n_eff,
     int64_t tile_n);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

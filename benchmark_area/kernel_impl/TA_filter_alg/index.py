@@ -123,7 +123,9 @@ def _filter_with_workspace(
     dim_widths = state["dim_widths"].contiguous()
     assigns_packed = _build_packed_assigns(state)
     h_q = int(q.shape[0])
-    k_clusters = int(centers.shape[2])
+    K_stride = int(centers.shape[2])
+    K_used = int(state.get("K_used", K_stride))
+    k_clusters = min(K_used, K_stride) if K_used > 0 else K_stride
     n_pad_filter = int(state["N_pad"])
     if q_head_to_kv is None:
         q_head_to_kv_t = torch.empty(0, device=q.device, dtype=torch.long)
@@ -135,11 +137,12 @@ def _filter_with_workspace(
     tile_n = 4096 if grid_blocks > GRID_BLOCKS_BOUNDARY else 2048
 
     ext = _load_filter_ext()
+    n_used_int = int(state.get("N_used", n_pad_filter))
     ext.fused_pipeline(
         q, centers, dim_offsets, dim_widths, q_head_to_kv_t,
         threshold.float().contiguous(), assigns_packed,
         top_scores, top_indices, depth, live_idx, live_count,
-        k_clusters, tile_n,
+        int(k_clusters), int(K_stride), int(n_used_int), tile_n,
     )
 
 

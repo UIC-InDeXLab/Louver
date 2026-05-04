@@ -88,8 +88,8 @@ __global__ void fused_pipeline_kernel_t(
     int32_t*       __restrict__ live_idx,
     int32_t*       __restrict__ live_count,
     // shapes
-    int Hq, int Hkv, int K, int max_w, int D,
-    int Npad, int K_words, int N_TILES, int has_map)
+    int Hq, int Hkv, int K, int K_stride, int max_w, int D,
+    int Npad, int N_eff, int K_words, int N_TILES, int has_map)
 {
     cg::grid_group grid = cg::this_grid();
     int hq  = blockIdx.x;
@@ -115,15 +115,42 @@ __global__ void fused_pipeline_kernel_t(
 
         if (kvh_ok) {
             const half2* q2 = reinterpret_cast<const half2*>(q_ptr);
-            int pairs = width >> 1;
+            int pairs = width >> 1;     // half2 count
             int tail  = pairs << 1;
+            // Use int4 (16B = 8 fp16 = 4 half2) loads when width is a
+            // multiple of 8 fp16 (= 4 half2). Width=32 satisfies this.
+            int int4_groups = pairs >> 2;   // each int4 covers 4 half2
+            int int4_tail   = int4_groups << 2;
             for (int k = tid; k < K; k += BLOCK) {
-                const half* c_ptr = centers + (((s * Hkv + kvh) * K + k) * max_w);
-                const half2* c2 = reinterpret_cast<const half2*>(c_ptr);
+                const half* c_ptr = centers + (((s * Hkv + kvh) * K_stride + k) * max_w);
                 float acc = 0.0f;
-                for (int p = 0; p < pairs; p++) {
-                    float2 f = __half22float2(__hmul2(q2[p], c2[p]));
-                    acc += f.x + f.y;
+                if (int4_groups > 0 && (((uintptr_t)c_ptr) & 0xF) == 0) {
+                    const int4* qv = reinterpret_cast<const int4*>(q_ptr);
+                    const int4* cv = reinterpret_cast<const int4*>(c_ptr);
+                    #pragma unroll
+                    for (int g = 0; g < int4_groups; g++) {
+                        int4 qg = qv[g];
+                        int4 cg = cv[g];
+                        const half2* qh2 = reinterpret_cast<const half2*>(&qg);
+                        const half2* ch2 = reinterpret_cast<const half2*>(&cg);
+                        #pragma unroll
+                        for (int j = 0; j < 4; j++) {
+                            float2 f = __half22float2(__hmul2(qh2[j], ch2[j]));
+                            acc += f.x + f.y;
+                        }
+                    }
+                    // Remaining half2 pairs (if width not multiple of 8 fp16).
+                    const half2* c2 = reinterpret_cast<const half2*>(c_ptr);
+                    for (int p = int4_tail; p < pairs; p++) {
+                        float2 f = __half22float2(__hmul2(q2[p], c2[p]));
+                        acc += f.x + f.y;
+                    }
+                } else {
+                    const half2* c2 = reinterpret_cast<const half2*>(c_ptr);
+                    for (int p = 0; p < pairs; p++) {
+                        float2 f = __half22float2(__hmul2(q2[p], c2[p]));
+                        acc += f.x + f.y;
+                    }
                 }
                 if (tail < width) acc += __half2float(q_ptr[tail]) * __half2float(c_ptr[tail]);
                 heap_push_l<IPT_L>(heap_keys, heap_vals, acc, k);
@@ -144,13 +171,12 @@ __global__ void fused_pipeline_kernel_t(
 
     grid.sync();
 
-    // ─────────────── PHASE 2: DEPTH + RESET (blk == 0) ───────────────
+    // ─────────────── PHASE 2: DEPTH (blk == 0) ───────────────
     if (blk == 0) {
-        // smem layout for depth phase
         float* smem_sums = reinterpret_cast<float*>(smem_raw);
         int*   smem_vwarp_hit = reinterpret_cast<int*>(smem_raw + L * sizeof(float));
 
-        constexpr int N_VWARPS = L / 32;  // 8
+        constexpr int N_VWARPS = L / 32;
         float th = threshold[hq];
         const float* ts = top_scores + (int64_t)hq * 4 * L;
 
@@ -193,12 +219,11 @@ __global__ void fused_pipeline_kernel_t(
     if (blk < N_TILES) {
         int tile    = blk;
         int n_start = tile * TILE_N;
-        if (n_start >= Npad) return;
+        int n_limit = (N_eff > 0 && N_eff < Npad) ? N_eff : Npad;
+        if (n_start >= n_limit) return;
         int n_end   = n_start + TILE_N;
-        if (n_end > Npad) n_end = Npad;
+        if (n_end > n_limit) n_end = n_limit;
 
-        // smem: [smem_bm uint32 × 4*K_words] [s_depth int] [s_warp_pop int×N_WARPS]
-        //       [s_warp_off int×N_WARPS] [s_block_off int]
         uint32_t* smem_bm    = reinterpret_cast<uint32_t*>(smem_raw);
         int* s_aux           = reinterpret_cast<int*>(smem_raw + 4 * K_words * sizeof(uint32_t));
         int* s_depth_p       = s_aux + 0;
@@ -312,6 +337,8 @@ void ta_filter_v7_10_fused_launch(
     torch::Tensor top_scores, torch::Tensor top_indices,
     torch::Tensor depth, torch::Tensor live_idx, torch::Tensor live_count,
     int64_t k_clusters,
+    int64_t k_stride,
+    int64_t n_eff,
     int64_t tile_n)
 {
     TORCH_CHECK(q.is_cuda() && centers.is_cuda() && assigns_packed.is_cuda());
@@ -329,13 +356,20 @@ void ta_filter_v7_10_fused_launch(
     int D     = (int)q.size(1);
     int S     = (int)centers.size(0);
     int Hkv   = (int)centers.size(1);
-    int K     = (int)centers.size(2);
+    int K_full = (int)centers.size(2);          // memory stride along the K dim
+    int K     = (int)k_clusters;                // loop bound for scoring
+    int K_stride = (int)k_stride;               // memory stride (= K_full normally)
     int max_w = (int)centers.size(3);
+    if (K_stride <= 0) K_stride = K_full;
+    if (K <= 0 || K > K_full) K = K_full;
     int Npad  = (int)assigns_packed.size(1);
+    int N_eff_i = (int)n_eff;
+    if (N_eff_i <= 0 || N_eff_i > Npad) N_eff_i = Npad;
     int K_words = (K + 31) / 32;
     int TILE_N  = (int)tile_n;
     TORCH_CHECK(TILE_N == 2048 || TILE_N == 4096, "tile_n must be 2048 or 4096");
-    int N_TILES = (Npad + TILE_N - 1) / TILE_N;
+    int N_TILES = (N_eff_i + TILE_N - 1) / TILE_N;
+    if (N_TILES < 1) N_TILES = 1;
     TORCH_CHECK(S == 4);
     TORCH_CHECK(K <= 32767);
     TORCH_CHECK(top_scores.size(2) == L, "v7.10/v7.11 specialised on L=256");
@@ -379,8 +413,8 @@ void ta_filter_v7_10_fused_launch(
         (void*)&q_ptr, (void*)&c_ptr, (void*)&doff_p, (void*)&dwid_p,
         (void*)&kv_ptr, (void*)&th_ptr, (void*)&ap_ptr,
         (void*)&ts_ptr, (void*)&ti_ptr, (void*)&dp_ptr, (void*)&li_ptr, (void*)&lc_ptr,
-        (void*)&Hq, (void*)&Hkv, (void*)&K, (void*)&max_w, (void*)&D,
-        (void*)&Npad, (void*)&K_words, (void*)&N_TILES, (void*)&hm_i,
+        (void*)&Hq, (void*)&Hkv, (void*)&K, (void*)&K_stride, (void*)&max_w, (void*)&D,
+        (void*)&Npad, (void*)&N_eff_i, (void*)&K_words, (void*)&N_TILES, (void*)&hm_i,
     };
 
     cudaError_t err;
