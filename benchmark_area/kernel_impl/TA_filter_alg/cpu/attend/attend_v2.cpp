@@ -176,9 +176,8 @@ torch::Tensor attend_v2_forward(
                               + sorted_top[1 * L_MAX + t]
                               + sorted_top[2 * L_MAX + t]
                               + sorted_top[3 * L_MAX + t];
-                if (row_sum < th) { depth = t; break; }
+                if (row_sum < th) { depth = t + 1; break; }
             }
-            if (depth == 0) depth = 1;
 
             std::memset(o, 0, sizeof(float) * 128);
             float m = -std::numeric_limits<float>::infinity();

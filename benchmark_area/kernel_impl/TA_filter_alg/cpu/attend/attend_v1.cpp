@@ -209,9 +209,8 @@ torch::Tensor attend_forward(
                               + sorted_top[1 * L_MAX + t]
                               + sorted_top[2 * L_MAX + t]
                               + sorted_top[3 * L_MAX + t];
-                if (row_sum < th) { depth = t; break; }
+                if (row_sum < th) { depth = t + 1; break; }
             }
-            if (depth == 0) depth = 1;
 
             std::memset(bm.data(), 0, sizeof(uint64_t) * (size_t)(bm_words * S_FIXED));
             for (int s = 0; s < S_FIXED; ++s) {

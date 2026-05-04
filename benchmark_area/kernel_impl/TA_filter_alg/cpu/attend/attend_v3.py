@@ -45,7 +45,7 @@ def attend(
 
     return _ext().attend(
         q.contiguous(),
-        state["centers_padded_bf16"],
+        state["centers_padded_f32"],
         state["parent_children_i32"],
         state["parent_counts_i32"],
         state["keys_padded_bf16"],

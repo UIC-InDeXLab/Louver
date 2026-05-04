@@ -73,7 +73,8 @@ def parse_args():
     p.add_argument("--n-tokens", type=int, default=4000)
     p.add_argument("--layer", type=int, default=15)
     p.add_argument("--prefill-frac", type=float, default=0.5)
-    p.add_argument("--n-steps", type=int, default=100)
+    p.add_argument("--n-steps", type=int, default=None,
+                   help="Decoding steps; default = remaining capture after prefill.")
     p.add_argument("--topk", type=int, default=20)
     p.add_argument("--n-growth", type=int, default=None)
     p.add_argument("--output-csv", type=Path, default=None)
@@ -114,7 +115,7 @@ def main():
 
     n_prefill = max(1, int(args.prefill_frac * N_total))
     max_decode = min(N_total - n_prefill, queries.shape[1] - n_prefill)
-    n_decode = min(args.n_steps, max_decode)
+    n_decode = max_decode if args.n_steps is None else min(args.n_steps, max_decode)
     if n_decode <= 0:
         raise ValueError("not enough keys for decoding — adjust --prefill-frac")
     n_growth = args.n_growth if args.n_growth is not None else n_decode + BUFFER_SIZE
