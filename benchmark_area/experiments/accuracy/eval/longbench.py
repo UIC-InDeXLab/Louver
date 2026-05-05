@@ -131,8 +131,8 @@ def make_louver_cache(model_config, args):
     )
 
 
-def generate_one(model, tokenizer, prompt: str, max_new_tokens: int, past_key_values=None):
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=131072).to(model.device)
+def generate_one(model, tokenizer, prompt: str, max_new_tokens: int, past_key_values=None, max_input_length: int = 32768):
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_input_length).to(model.device)
     input_len = inputs.input_ids.shape[1]
     with torch.no_grad():
         output = model.generate(
@@ -171,7 +171,8 @@ def run_task(model, tokenizer, task: str, args, max_samples: int = None):
         if args.method.startswith("louver"):
             past_kv = make_louver_cache(model.config, args)
 
-        pred = generate_one(model, tokenizer, prompt, max_gen, past_key_values=past_kv)
+        pred = generate_one(model, tokenizer, prompt, max_gen, past_key_values=past_kv,
+                            max_input_length=args.max_input_length)
         score = score_prediction(pred, answers, task)
         scores.append(score)
         preds.append({"question": example.get("input", "")[:200], "pred": pred, "gold": answers, "score": score})
@@ -194,6 +195,7 @@ def main():
     parser.add_argument("--budget_fraction", type=float, default=0.1)
     parser.add_argument("--sample_size", type=int, default=256)
     parser.add_argument("--update_interval", type=int, default=256)
+    parser.add_argument("--max_input_length", type=int, default=32768)
     args = parser.parse_args()
 
     attn_impl = "eager"

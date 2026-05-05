@@ -98,18 +98,106 @@ def _recompute_centers(keys_h: torch.Tensor, assign_h: torch.Tensor, k: int) -> 
 def _balanced_pca_tree_subspace(
     keys_sub: torch.Tensor, bf: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    h, n, _d = keys_sub.shape
+    """Vectorized balanced KD-tree clustering over all heads simultaneously.
+
+    Replaces the original O(K*H) Python recursion (with GPU-CPU syncs at every
+    node) with O(log K) Python iterations, each doing fully-batched GPU ops over
+    all heads and clusters at once.
+
+    Same algorithm as before (max-variance axis-aligned binary split), same
+    output shapes. Results are equivalent but not bit-identical when n is not
+    an exact multiple of bf (cluster boundaries shift slightly for the padded
+    tail points — irrelevant for real keys).
+    """
+    h, n, d = keys_sub.shape
     device = keys_sub.device
+    dtype = keys_sub.dtype
     k = max(1, math.ceil(n / bf))
-    target_sizes = _target_cluster_sizes(n, bf, device)
-    assign = torch.empty(h, n, device=device, dtype=torch.long)
-    centers = torch.empty(h, k, keys_sub.shape[-1], device=device, dtype=keys_sub.dtype)
-    all_idx = torch.arange(n, device=device)
-    for head in range(h):
-        assign_h = torch.empty(n, device=device, dtype=torch.long)
-        _assign_balanced_tree_h(keys_sub[head], all_idx, target_sizes, assign_h, 0)
-        assign[head] = assign_h
-        centers[head] = _recompute_centers(keys_sub[head], assign_h, k)
+
+    if k == 1:
+        centers = keys_sub.float().mean(dim=1).to(dtype).unsqueeze(1)  # (h, 1, d)
+        return torch.zeros(h, n, device=device, dtype=torch.long), centers
+
+    # Round k up to the next power of two so every level splits cleanly.
+    # Padding points (filled with +inf) sort to the end at every split and end
+    # up in the "extra" tail clusters that contain no real keys.
+    k_pow2 = 1 << (k - 1).bit_length()   # smallest power-of-2 >= k
+    n_pad  = k_pow2 * bf                  # total slots (>= n)
+
+    keys_f32 = keys_sub.float()           # (h, n, d) — fp32 for numerics
+
+    # Pad real keys; tail slots become +inf so they sort last on every axis.
+    if n_pad > n:
+        pad = torch.full((h, n_pad - n, d), float('inf'), device=device, dtype=torch.float32)
+        kp  = torch.cat([keys_f32, pad], dim=1)   # (h, n_pad, d)
+    else:
+        kp = keys_f32
+
+    # perm[hi, i] = original key index currently at slot i for head hi.
+    # Starts as identity; we reorder it via in-place scatter at each level.
+    perm = torch.arange(n_pad, device=device, dtype=torch.long) \
+               .unsqueeze(0).expand(h, -1).contiguous()          # (h, n_pad)
+
+    n_c = 1                               # number of live clusters
+    while n_c < k_pow2:
+        cs = n_pad // n_c                 # current cluster size (exact: n_pad = k_pow2 * bf)
+
+        # ── gather current sorted order ───────────────────────────────────
+        # pts[hi, c, i, :] = kp[hi, perm[hi, c*cs + i], :]
+        pts = kp.gather(
+            1,
+            perm.unsqueeze(-1).expand(-1, -1, d)
+        ).reshape(h, n_c, cs, d)          # (h, n_c, cs, d)
+
+        # ── real-point mask ───────────────────────────────────────────────
+        real = perm.reshape(h, n_c, cs) < n   # (h, n_c, cs)  True = real key
+
+        # ── variance over real points per cluster ─────────────────────────
+        cnt   = real.float().sum(dim=2, keepdim=True).clamp_min_(1)  # (h, n_c, 1)
+        real4 = real.unsqueeze(-1)         # (h, n_c, cs, 1) broadcasts with (h,n_c,cs,d)
+        pts_m = pts.masked_fill(~real4, 0.0)
+        # cnt is (h,n_c,1); sum is (h,n_c,1,d) → need cnt as (h,n_c,1,1) to divide correctly
+        mu    = pts_m.sum(dim=2, keepdim=True) / cnt.unsqueeze(-1)   # (h, n_c, 1, d)
+        diff  = pts_m - mu              # (h, n_c, cs, d) via broadcast
+        diff  = diff.masked_fill(~real4, 0.0)
+        var   = (diff * diff).sum(dim=2) / cnt                       # (h, n_c, d)
+
+        # ── split axis (no .item()) ───────────────────────────────────────
+        ax = var.argmax(dim=-1)                                       # (h, n_c)
+
+        # ── coordinates along split axis ──────────────────────────────────
+        coord = pts.gather(
+            3,
+            ax.unsqueeze(-1).unsqueeze(-1).expand(h, n_c, cs, 1)
+        ).squeeze(-1)                                                 # (h, n_c, cs)
+        coord[~real] = float('inf')        # padding always sorts last
+
+        # ── sort within each cluster ──────────────────────────────────────
+        order = coord.argsort(dim=2, stable=True)                    # (h, n_c, cs)
+
+        # ── update perm ───────────────────────────────────────────────────
+        perm = perm.reshape(h, n_c, cs).gather(2, order).reshape(h, n_pad)
+
+        n_c *= 2
+
+    # ── assign: slot j → cluster j // bf ─────────────────────────────────
+    slot_ids = torch.arange(n_pad, device=device, dtype=torch.long) // bf   # (n_pad,)
+    assign_all = torch.empty(h, n_pad, device=device, dtype=torch.long)
+    assign_all.scatter_(1, perm, slot_ids.unsqueeze(0).expand(h, -1))
+    assign = assign_all[:, :n]            # (h, n) — only real keys
+
+    # ── cluster centers ───────────────────────────────────────────────────
+    centers = torch.zeros(h, k, d, device=device, dtype=torch.float32)
+    centers.scatter_add_(
+        1,
+        assign.unsqueeze(-1).expand(-1, -1, d),
+        keys_f32
+    )
+    counts = torch.zeros(h, k, device=device, dtype=torch.float32).scatter_add_(
+        1, assign, torch.ones(h, n, device=device)
+    ).clamp_min_(1).unsqueeze(-1)
+    centers = (centers / counts).to(dtype)   # (h, k, d)
+
     return assign, centers
 
 
