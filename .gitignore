@@ -163,3 +163,11 @@ kv_data/
 *.lprof
 
 archive/
+!benchmark_area/kernel_impl/kernels/archive/
+!benchmark_area/kernel_impl/kernels/archive/**
+benchmark_area/kernel_impl/kernels/archive/__pycache__/
+
+*flashattention
+*pytorch
+.aider*
+*.tex
