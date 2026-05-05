@@ -1,0 +1,125 @@
+\section{Experimental Setup: Per-Step Score Distribution (Observation~2)}
+\label{app:score-distribution}
+
+\paragraph{Model, prompt, and generation.}
+We use \texttt{DeepSeek-R1-Distill-Qwen-14B} loaded in \texttt{fp16} with
+eager attention, decoded greedily for $2{,}000$ new tokens on a single
+multi-part reasoning prompt. The prompt asks the model to solve a six-part
+combinatorial scheduling problem (assigning $7$ cities to $5$ days under
+seven explicit constraints, costing the resulting schedules, deriving a
+counting recurrence, identifying equivalence classes, writing pseudocode for
+a backtracking solver, and recomputing counts under perturbed constraints).
+Two stylistic instructions are pinned in the system prompt to elicit
+representative reasoning behaviour: (A) the model must produce an explicit
+numbered plan and at least four ``pivot'' blocks beginning with
+\textit{``Wait,''} / \textit{``Actually,''} / \textit{``Hmm, let me reconsider~--''},
+and (B) every numeric quantity must be re-derived inline as
+\texttt{LHS = a OP b = result}. These instructions induce both wide-tail
+synthesis steps (pivots, plan back-references, recaps) and narrow-tail local
+steps (intermediate arithmetic, template scaffolding) within the same trace,
+which is what the cov50 metric is designed to discriminate.
+
+\paragraph{Q/K capture and metric.}
+During decoding we hook every attention layer and persist, for each generated
+position $t$, the post-RoPE query vector $q_{t,h}\in\mathbb{R}^{d}$ for every
+query head $h$, alongside the full prefix of post-RoPE keys
+$k_{1:T_t,h'}$ for every key/value head $h'$, where $T_t$ is the prompt
+length plus $t$. The snapshot is replayed offline. For each layer we
+expand the GQA mapping $h \mapsto h' = h \bmod (\text{num\_kv\_heads})$ and
+compute attention scores in \texttt{fp32} as $s_{t,h,j} = q_{t,h}^{\top}
+k_{j,h'} / \sqrt{d}$ for $j \le T_t$, then weights $w_{t,h,j} =
+\mathrm{softmax}_j(s_{t,h,j})$. The per-head, per-step \emph{cov50} statistic
+is the smallest $k$ such that the top-$k$ cumulative mass of
+$(w_{t,h,j})_{j}$ reaches $0.5$, normalised by $T_t$:
+$$
+\mathrm{cov50}_{\text{weight}}(t,h) \;=\; \frac{1}{T_t}\,\min\Bigl\{k \;:\;
+\sum_{j \in \mathrm{top}_k(w_{t,h,\cdot})} w_{t,h,j} \ge 0.5\Bigr\}.
+$$
+A score-space variant $\mathrm{cov50}_{\text{score}}$ is computed identically
+after shifting the raw scores by their per-step minimum and renormalising to
+a distribution; we report the weight-space variant in
+Figure~\ref{fig:decoding}. Cov50 is bounded in $(0,1]$ and is comparable
+across decoding positions of different lengths $T_t$: small values indicate
+that attention concentrates on a tiny fraction of the prefix, while large
+values indicate diffuse attention.
+
+\paragraph{Aggregation and figure.}
+Computation runs on the GPU, layer by layer, with chunking over the query
+dimension to bound memory. For each step $t$ we aggregate
+$\mathrm{cov50}_{\text{weight}}(t,h)$ across all heads of all layers by taking
+the mean, yielding the time-series plotted in Figure~\ref{fig:decoding}. The
+prefill region ($t < $ prompt length) is shown faded for reference; only the
+decode region is annotated. To ground the visual signal, we automatically
+extract decode-step windows corresponding to the four highest and four lowest
+cov50 values (separated by at least $120$ tokens to avoid clustering) and
+decode the $\pm 20$-token neighbourhood of each peak.
+
+\paragraph{Decoded windows.}
+We list the eight extracted windows below; the bracketed token \texttt{[[\,]]}
+marks the target step $t$, and the value next to each label is the mean
+cov50 at that step.
+
+\textit{Wide-tail (transition / synthesis) windows:}
+\begin{itemize}\itemsep1pt
+  \item \textsc{w1} \,($t{=}1365$, $\mathrm{cov50}{=}0.058$).
+    \texttt{``\,that would make Mon have two cities: G and A. Is that
+    allowed? Constraint (f) [[\,says\,]] at most 2 per day, so yes. Wait,
+    but in this subcase, G is\,''}
+  \item \textsc{w2} \,($t{=}1460$, $\mathrm{cov50}{=}0.060$).
+    \texttt{``\,can't be on Tue because that would make three cities on Tue
+    (C, F, B). [[\,Wait\,]], no, each day can have up to 2 cities. So if B
+    is on Tue,\,''}
+  \item \textsc{w3} \,($t{=}1648$, $\mathrm{cov50}{=}0.054$).
+    \texttt{``\,we have 7 cities: A, B, C, D, E, F, G. [[\,All\,]] are
+    assigned except Fri. Wait, no, Fri is empty. So we need to assign the
+    remaining\,''}
+  \item \textsc{w4} \,($t{=}1767$, $\mathrm{cov50}{=}0.056$).
+    \texttt{``\,because we have to assign all cities, but Fri is empty. So
+    this is invalid. Wait, [[\,no\,]], Fri can have zero cities, but the
+    problem says each city has exactly one delivery, so all\,''}
+\end{itemize}
+
+\textit{Narrow-tail (local / template) windows:}
+\begin{itemize}\itemsep1pt
+  \item \textsc{n1} \,($t{=}1050$, $\mathrm{cov50}{=}0.019$).
+    \texttt{``\,Fri is available. So, four possibilities for G and F. Let me
+    consider each subcase [[\,.\,]] \textbf{Subcase 1a: G on Mon, F on
+    Tue}\,''}
+  \item \textsc{n2} \,($t{=}1265$, $\mathrm{cov50}{=}0.029$).
+    \texttt{``\,A can't be on Thu. So, possible A assignments: Mon, Tue,
+    Wed. Let [[\,'s\,]] try A on Mon. Then B can be on Tue, Wed, Thu.\,''}
+  \item \textsc{n3} \,($t{=}1557$, $\mathrm{cov50}{=}0.022$).
+    \texttt{``\,has D and B. That's allowed. So, two possibilities for B.
+    Let's explore both [[\,.\,]] \textbf{Subsubcase 1a1: A on Mon, B on
+    Wed}\,''}
+  \item \textsc{n4} \,($t{=}1822$, $\mathrm{cov50}{=}0.029$).
+    \texttt{``\,cities except Fri, which is empty. That's a problem. So this
+    subsubcase is invalid [[\,.\,]] Wait, no, let me recount: Mon: G, A
+    (2 cities), Tue: C\,''}
+\end{itemize}
+
+\paragraph{Discussion.}
+The two clusters expose qualitatively distinct attention regimes within the
+\emph{same} decoding trace. Wide-tail steps consistently fire at points where
+the model must integrate information from far-apart spans of the prefix:
+checking a freshly-emitted partial schedule against constraint (f) declared
+hundreds of tokens earlier (\textsc{w1}), pivoting away from a wrong
+intermediate conclusion by re-reading the per-day capacity rule (\textsc{w2}),
+recapping the seven-city universe before reasoning about the remaining slots
+(\textsc{w3}), or revisiting whether ``Fri empty'' is actually permitted
+(\textsc{w4}). All four contain the model's characteristic
+\textit{``Wait,~no\dots''} pivot phrase and force attention to spread over
+many earlier tokens to reconcile the local state with global constraints.
+Narrow-tail steps, by contrast, sit at template boundaries where the next
+token is essentially determined by the most recent few words: the period
+that closes a clause and opens a new \textbf{Subcase} block (\textsc{n1},
+\textsc{n3}), the contraction \textit{``Let's''} that introduces a fresh
+local trial (\textsc{n2}), or the period that closes
+\textit{``\dots is invalid''} before backtracking (\textsc{n4}). Cov50 values
+differ by roughly a factor of three between the two regimes
+($\sim0.02$ vs.\ $\sim0.06$), and the alternation between them happens on a
+scale of tens to a few hundred decode steps. Any sparse-attention policy
+with a fixed token budget either over-provisions on narrow steps (wasting
+compute) or under-provisions on wide steps (incurring false negatives on the
+exact tokens the model is trying to reconcile), which is the empirical basis
+for the dynamic, recall-oriented formulation argued for in the main text.

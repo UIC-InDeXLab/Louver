@@ -1,0 +1,15 @@
+3.2-3B-Instruct.pt --bf 4 --S 4 --bound middle
+/home/mohsen/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Loading captured QKV from capture_qkv_8000_meta-llama_Llama-3.2-3B-Instruct.pt ...
+Layer 15: H_kv=8, H_q=24, N=8461, D=128, S=4, bf=4, K=2116
+queries=30, topks=[5, 10, 20, 50], strategy=contiguous, query=raw, bound=middle
+Index build: 538.0 ms
+
+Bound: middle; stop rule: first row where row_bound_sum < T (720 query-head cases, K=2116)
+  topk  rows_mean  keys_mean  cand_frac  hits_mean   recall
+----------------------------------------------------------------
+     5      44.34      578.6     0.0684       4.94   0.9886
+    10      65.94      864.6     0.1022       9.91   0.9906
+    20      93.59     1222.9     0.1445      19.87   0.9934
+    50     140.23     1799.6     0.2127      49.69   0.9938

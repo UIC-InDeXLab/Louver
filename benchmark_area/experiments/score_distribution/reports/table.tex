@@ -1,0 +1,56 @@
+% Requires (in main preamble):
+%   \usepackage{tcolorbox}
+%   \tcbuselibrary{skins,breakable}
+%   \usepackage{graphicx}
+%
+% Box styles — define ONCE in preamble:
+\newtcolorbox{wbox}[1]{enhanced, colback=white, colframe=red!65!black,
+  colbacktitle=red!65!black, coltitle=white, fonttitle=\bfseries\scriptsize,
+  title=#1, left=3pt, right=3pt, top=1pt, bottom=1pt, boxrule=0.5pt,
+  arc=1.6pt, sharp corners=southwest, fontupper=\scriptsize}
+\newtcolorbox{nbox}[1]{enhanced, colback=white, colframe=teal!75!black,
+  colbacktitle=teal!75!black, coltitle=white, fonttitle=\bfseries\scriptsize,
+  title=#1, left=3pt, right=3pt, top=1pt, bottom=1pt, boxrule=0.5pt,
+  arc=1.6pt, sharp corners=southwest, fontupper=\scriptsize}
+
+\begin{figure}[t]
+  \centering
+  \begin{minipage}[c]{0.46\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{cov50_weight_mean_over_time.pdf}
+  \end{minipage}\hfill
+  \begin{minipage}[c]{0.52\textwidth}
+    \begin{minipage}[t]{0.495\linewidth}
+      \begin{wbox}{W1 \hfill $t{=}1365$}
+        \dots\,Constraint (f) says at most 2 per day, so yes.
+      \end{wbox}\vspace{1pt}
+      \begin{wbox}{W2 \hfill $t{=}1460$}
+        \dots\,(C, F, B). Wait, no, each day can have up to 2 cities.
+      \end{wbox}\vspace{1pt}
+      \begin{wbox}{W3 \hfill $t{=}1648$}
+        \dots\,All are assigned except Fri. Wait, no, Fri is empty\dots
+      \end{wbox}\vspace{1pt}
+      \begin{wbox}{W4 \hfill $t{=}1767$}
+        \dots\,Wait, no, Fri can have zero cities, but the problem says\dots
+      \end{wbox}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.495\linewidth}
+      \begin{nbox}{N1 \hfill $t{=}1050$}
+        \dots\,Let me consider each subcase. \textbf{Subcase 1a:}\,G on Mon\dots
+      \end{nbox}\vspace{1pt}
+      \begin{nbox}{N2 \hfill $t{=}1265$}
+        \dots\,Let's try A on Mon. Then B can be on\dots
+      \end{nbox}\vspace{1pt}
+      \begin{nbox}{N3 \hfill $t{=}1557$}
+        \dots\,Let's explore both. \textbf{Subsubcase 1a1:}\,A\dots
+      \end{nbox}\vspace{1pt}
+      \begin{nbox}{N4 \hfill $t{=}1822$}
+        \dots\,So this subsubcase is invalid. Wait, no, let me recount\dots
+      \end{nbox}
+    \end{minipage}
+  \end{minipage}
+  \caption{Per-step cov50 in a DeepSeek-R1-Distill-Qwen-14B reasoning trace.
+  Wide-tail steps (W1--W4) cross-reference the plan, constraints, or recap;
+  narrow-tail steps (N1--N4) close a local clause or template.}
+  \label{fig:cov50}
+\end{figure}
