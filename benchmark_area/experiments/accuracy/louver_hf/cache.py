@@ -19,7 +19,7 @@ from typing import Any
 
 import torch
 from transformers.cache_utils import Cache, CacheLayerMixin
-from transformers.configuration_utils import PreTrainedConfig
+from transformers import PreTrainedConfig
 
 HIRA_ROOT = Path(__file__).resolve().parents[4]
 BENCH_ROOT = HIRA_ROOT / "benchmark_area"
