@@ -1,8 +1,10 @@
 # Experiments Plan
 
+Ordered by priority.
+
 ## Must-Have
 
-### 1. Accuracy vs. Baselines on Long-Context Benchmarks
+### 1. Accuracy vs. Baselines on Long-Context Benchmarks (~same sparsity)
 - **Benchmarks:**
   - Long input: LongBench v1 (6 QA tasks) [DONE], RULER
   - Long output reasoning: AIME 2024 [], MATH-500 []
@@ -25,14 +27,13 @@
 - X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
 - Compare: Louver GPU, FlashAttention, Quest, H2O, Twilight
 - Compare: on CPU
-- Must show Louver faster than FlashAttention at large N
+- Must show Louver faster than `FlashAttention` at large N
+- Others to compare to `Twilight`
 - **Dense baselines (both required):**
   - `dense_eager` — standard PyTorch eager attention (slowest, reference)
   - `dense_flash` — SDPA with FlashAttention backend (`SDPBackend.FLASH_ATTENTION`)
-
-
-### 2.1. (new)
-- Show AUC for speed vs. acc by changing the budgets.
+- Models: DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-Distill-Qwen-14B
+- Dataset: AIME sample, with very long output.
 
 ### 3. Recall / False Negative Rate
 - Show Louver = 100% recall, baselines < 100%
@@ -84,18 +85,13 @@
 
 ---
 
-## Motivating Experiment (intro / observations section)
+## Other Experiments
 
-### 10. Error Spike Demonstration
-- Show one missing critical key → sharp output error
-- Use a reasoning task (long chain-of-thought)
-- Motivates the "zero false negatives" requirement with concrete numbers
+### 11
+- If time!
+- Show AUC for speed vs. acc by changing the budgets.
 
 ---
-
-## Priority Order
-
-1 → 3 → 3.1 → 3.2 → 2 → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 ## Notes
 - compare to fixed budget
@@ -108,3 +104,6 @@
     - RULER, LongBench
 - compare to long output
     - MATH, AIME
+
+### Others
+- Add a bigger model: "DeepSeek-R1-Distill-Qwen-14B"

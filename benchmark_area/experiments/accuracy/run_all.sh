@@ -108,20 +108,20 @@ run_math() {
 # run_ruler streaming_llm_f0.1 --method streaming_llm --budget_fraction 0.1               --n_samples 50
 
 # ── Reasoning (DeepSeek-R1-Distill-Llama-8B) ─────────────────────────────────
-# [HERE-RUNNING]
-run_aime louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_problems 20
+# [HERE-DONE]
+# run_aime louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_problems 20
 # [SERVER2-RUNNING]
 # run_aime dense_sdpa                --method dense_sdpa --max_problems 20
 # [SERVER2-RUNNING]
 # run_aime twilight_p0.85            --method twilight   --top_p 0.85 --max_problems 20
-# [-]
+# [SERVER1]
 # run_aime h2o_b512                  --method h2o        --budget_tokens 512 --max_problems 20
 
-# [HERE]
+# [HERE-RUNNING]
 # run_math louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_samples 50
-# [SERVER2]
+# [SERVER3-RUNNING]
 # run_math dense_sdpa                --method dense_sdpa               --max_samples 50
-# [-]
+# []
 # run_math twilight_p0.85            --method twilight   --top_p 0.85 --max_samples 50
 
 echo "ALL DONE" | tee -a logs/summary.log
