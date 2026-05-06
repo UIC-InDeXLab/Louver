@@ -4,7 +4,7 @@ Ordered by priority.
 
 ## Must-Have
 
-### 1. Accuracy vs. Baselines on Long-Context Benchmarks (~same sparsity)
+### 1. Accuracy vs. Baselines on Long-Context Benchmarks on same sparsity (`experiments/accuracy`)
 - **Benchmarks:**
   - Long input: LongBench v1 (6 QA tasks) [DONE], RULER
   - Long output reasoning: AIME 2024 [], MATH-500 []
@@ -23,7 +23,7 @@ Ordered by priority.
 - Key point: Louver wins because of zero false negatives
 
 
-### 2. Latency vs. Sequence Length
+### 2. Latency vs. Sequence Length (`experiments/latency`)
 - X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
 - Compare: Louver GPU, FlashAttention, Quest, H2O, Twilight
 - Compare: on CPU
