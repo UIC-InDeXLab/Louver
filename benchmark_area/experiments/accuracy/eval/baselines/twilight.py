@@ -27,16 +27,13 @@ def _top_p_mask(attn_weights: torch.Tensor, top_p: float) -> torch.Tensor:
     """
     attn_weights: (B, H_q, 1, N) unnormalized
     Returns bool mask (B, H_q, 1, N): True = keep.
-    Keeps minimum tokens whose softmax mass sums to >= top_p.
+    Keeps top (1-top_p) fraction of tokens by raw score rank.
     """
-    probs = F.softmax(attn_weights.float(), dim=-1)
-    sorted_probs, sorted_idx = probs.sort(dim=-1, descending=True)
-    cumsum = sorted_probs.cumsum(dim=-1)
-    # remove token i if cumulative mass *before* it already >= top_p
-    remove = (cumsum - sorted_probs) >= top_p
-    mask = torch.zeros_like(remove)
-    mask.scatter_(dim=-1, index=sorted_idx, src=~remove)
-    return mask
+    N = attn_weights.shape[-1]
+    k = max(1, int((1.0 - top_p) * N))
+    topk_vals = attn_weights.topk(k, dim=-1).values            # (B, H_q, 1, k)
+    tau = topk_vals[..., -1:]                                   # (B, H_q, 1, 1)
+    return attn_weights >= tau
 
 
 def twilight_attention_forward(
