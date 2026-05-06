@@ -18,7 +18,15 @@ EOF
 
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export TORCH_EXTENSIONS_DIR="${TMPDIR:-/tmp}/torch_ext_$$"
+export PYTORCH_ALLOC_CONF=expandable_segments:True
+GPU_ARCH=$(python - <<'PYEOF'
+import torch
+maj, min_ = torch.cuda.get_device_capability()
+print(f"{maj}.{min_}")
+PYEOF
+)
+export TORCH_CUDA_ARCH_LIST="$GPU_ARCH"
+export TORCH_EXTENSIONS_DIR="${TMPDIR:-/tmp}/torch_ext_${GPU_ARCH//./_}_$$"
 export TRITON_CACHE_DIR="${TMPDIR:-/tmp}/triton_cache_$$"
 
 mkdir -p logs "$LB_OUTDIR" "$RULER_OUTDIR" "$AIME_OUTDIR" "$MATH_OUTDIR"
