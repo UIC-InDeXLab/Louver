@@ -143,7 +143,14 @@ def generate_one(model, tokenizer, prompt: str, max_new_tokens: int, past_key_va
             use_cache=True,
         )
     generated = output[0, input_len:]
-    return tokenizer.decode(generated, skip_special_tokens=True).strip()
+    pred = tokenizer.decode(generated, skip_special_tokens=True).strip()
+    pred = pred.split("\n")[0].strip()
+    return pred
+
+
+SHORT_ANSWER_TASKS = {"hotpotqa", "2wikimqa", "musique", "triviaqa",
+                      "multifieldqa_en", "narrativeqa", "qasper", "trec",
+                      "passage_count", "passage_retrieval_en"}
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -173,6 +180,8 @@ def run_task(model, tokenizer, task: str, args, max_samples: int = None):
 
         pred = generate_one(model, tokenizer, prompt, max_gen, past_key_values=past_kv,
                             max_input_length=args.max_input_length)
+        if task in SHORT_ANSWER_TASKS:
+            pred = pred.split(". ")[0].strip()
         score = score_prediction(pred, answers, task)
         scores.append(score)
         preds.append({"question": example.get("input", "")[:200], "pred": pred, "gold": answers, "score": score})
@@ -214,12 +223,11 @@ def main():
     tag = f"{args.method}_{args.threshold_mode}_f{args.budget_fraction}"
     model_tag = args.model.split("/")[-1]
 
+    tasks = [t.strip() for t in args.tasks.split(",") if t.strip() in ALL_TASKS]
     all_results = {}
-    for task in args.tasks.split(","):
-        task = task.strip()
-        if task not in ALL_TASKS:
-            print(f"Unknown task {task!r}, skipping", flush=True)
-            continue
+    task_bar = tqdm(tasks, desc=f"{args.method}/{args.threshold_mode}", unit="task", position=0)
+    for task in task_bar:
+        task_bar.set_postfix(current=task)
         result = run_task(model, tokenizer, task, args, args.max_samples)
         all_results[task] = result["avg"]
         print(f"  {task}: {result['avg']:.4f}", flush=True)

@@ -3,17 +3,21 @@
 ## Must-Have
 
 ### 1. Accuracy vs. Baselines on Long-Context Benchmarks
-- **Benchmarks:** RULER, LongBench v2, NIAH variants
+- **Benchmarks:** RULER, LongBench v2, AIME
 - **Models:** Llama 3.1 8B + one larger (70B or Qwen 2.5 72B)
 - **Baselines:** H2O, StreamingLLM, MagicPIG, PQCache, RetrievalAttention, InfLLM, Quest, ClusterKV
 - I. All baselines at comparable KV budget/fraction
 - II. Louver with threshold methods 
 - Key point: Louver wins because of zero false negatives
 
+
 ### 2. Latency vs. Sequence Length
 - X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
 - Compare: Louver GPU, FlashAttention, Quest, ClusterKV, H2O
 - Must show Louver faster than FlashAttention at large N
+- **Dense baselines (both required):**
+  - `dense_eager` — standard PyTorch eager attention (slowest, reference)
+  - `dense_flash` — SDPA with FlashAttention backend (`SDPBackend.FLASH_ATTENTION`)
 
 
 ### 2.1. (new)
@@ -51,9 +55,12 @@
 - Group size r
 - Query 1 (full-subspace filter) vs. Query 2 (TA filter)
 
-### 8. Threshold Oracle Comparison
-- SampleMax vs. SampleMeanMax vs. fixed τ
-- Measure accuracy and latency for each
+### 8. Threshold Oracle Ablation
+- Louver-TA + Louver-Full × all oracles: sample_max, sample_meanmax, sample_gap, budget (fraction=0.1)
+- Small subsample of same 6 QA tasks (10 examples/task)
+- Report per variant: accuracy (avg F1) + fraction of tokens retrieved (mean ± std across layers/heads/steps/examples)
+- Instrumentation: log retrieved/total tokens per decode step in LouverCacheLayer
+- Goal: which oracle gives best accuracy vs sparsity trade-off? Justify oracle choice in main experiments
 
 ### 9. Buffer Size B Effect
 - Update frequency vs. accuracy trade-off
