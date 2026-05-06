@@ -102,9 +102,9 @@ run_math() {
 # run_aime twilight_p0.85            --method twilight   --top_p 0.85
 # run_aime h2o_b512                  --method h2o        --budget_tokens 512
 
-run_math dense_sdpa                --method dense_sdpa               --max_samples 50
-run_math louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85 --max_samples 50
-# run_math twilight_p0.85            --method twilight   --top_p 0.85
-# run_math h2o_b512                  --method h2o        --budget_tokens 512
+# run_math dense_sdpa                --method dense_sdpa               --max_samples 50
+# run_math louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85 --max_samples 50
+run_math twilight_p0.85            --method twilight   --top_p 0.85 --max_samples 50
+run_math h2o_b512                  --method h2o        --budget_tokens 512 --max_samples 50
 
 echo "ALL DONE" | tee -a logs/summary.log

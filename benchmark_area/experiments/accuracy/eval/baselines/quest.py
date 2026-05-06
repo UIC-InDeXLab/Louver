@@ -64,8 +64,10 @@ class QuestCacheLayer(CacheLayerMixin):
         self.chunk_max = k_trunc.max(dim=2).values
         self.chunk_min = k_trunc.min(dim=2).values
 
-    def get_mask_sizes(self, cache_position: torch.Tensor) -> tuple[int, int]:
-        return self.get_seq_length() + cache_position.shape[0], 0
+    def get_mask_sizes(self, query_length) -> tuple[int, int]:
+        if not isinstance(query_length, int):
+            query_length = query_length.shape[0]
+        return self.get_seq_length() + query_length, 0
 
     def get_seq_length(self) -> int:
         if self.keys is None:
