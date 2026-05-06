@@ -88,28 +88,38 @@ run_math() {
 }
 
 # ── LongBench ────────────────────────────────────────────────────────────────
+# [HERE-DONE]
 # run dense_sdpa              --method dense_sdpa                                --max_samples 100
-run louver_ta_budget_s512   --method louver_ta    --threshold_mode budget --budget_fraction 0.1 --sample_size 512 --max_samples 100
+# run louver_ta_budget_s512   --method louver_ta    --threshold_mode budget --budget_fraction 0.1 --sample_size 512 --max_samples 100
 # run_baseline h2o_f0.1           --method h2o          --budget_fraction 0.1   --max_samples 100
 # run_baseline quest_f0.1         --method quest        --budget_fraction 0.1   --max_samples 100
 # run_baseline streaming_llm_f0.1 --method streaming_llm --budget_fraction 0.1  --max_samples 100
 
 # ── RULER ────────────────────────────────────────────────────────────────────
-run_ruler dense              --method dense_sdpa                                         --n_samples 50
-run_ruler louver_ta_budget_s512 --method louver_ta   --threshold_mode budget --budget_fraction 0.1 --sample_size 512 --n_samples 50
-run_ruler h2o_f0.1           --method h2o         --budget_fraction 0.1                  --n_samples 50
-run_ruler quest_f0.1         --method quest        --budget_fraction 0.1                 --n_samples 50
-run_ruler streaming_llm_f0.1 --method streaming_llm --budget_fraction 0.1               --n_samples 50
+# [HERE-DONE]
+# run_ruler dense              --method dense_sdpa                                         --n_samples 50
+# [HERE-DONE]
+# run_ruler louver_ta_budget_s512 --method louver_ta   --threshold_mode budget --budget_fraction 0.1 --sample_size 512 --n_samples 50
+# [SERVER1-RUNNING]
+# run_ruler h2o_f0.1           --method h2o         --budget_fraction 0.1                  --n_samples 50
+# [SERVER1-RUNNING]
+# run_ruler quest_f0.1         --method quest        --budget_fraction 0.1                 --n_samples 50
+# [SERVER1-RUNNING]
+# run_ruler streaming_llm_f0.1 --method streaming_llm --budget_fraction 0.1               --n_samples 50
 
 # ── Reasoning (DeepSeek-R1-Distill-Llama-8B) ─────────────────────────────────
-# run_aime dense_sdpa                --method dense_sdpa --max_problems 30
-# run_aime louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_problems 30
-# run_aime twilight_p0.85            --method twilight   --top_p 0.85 --max_problems 30
-# run_aime h2o_b512                  --method h2o        --budget_tokens 512 --max_problems 30
+# [HERE-RUNNING]
+run_aime louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_problems 20
+# [SERVER2-RUNNING]
+# run_aime dense_sdpa                --method dense_sdpa --max_problems 20
+# [SERVER2-RUNNING]
+# run_aime twilight_p0.85            --method twilight   --top_p 0.85 --max_problems 20
+# [SERVER2-RUNNING]
+# run_aime h2o_b512                  --method h2o        --budget_tokens 512 --max_problems 20
 
+# run_math louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_samples 50
 # run_math dense_sdpa                --method dense_sdpa               --max_samples 50
-# run_math louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_samples 20
-# run_math twilight_p0.85            --method twilight   --top_p 0.85 --max_samples 20
-# run_math h2o_b512                  --method h2o        --budget_tokens 512 --max_samples 20
+# run_math twilight_p0.85            --method twilight   --top_p 0.85 --max_samples 50
+# run_math h2o_b512                  --method h2o        --budget_tokens 512 --max_samples 50
 
 echo "ALL DONE" | tee -a logs/summary.log
