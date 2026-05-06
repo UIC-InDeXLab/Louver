@@ -4,8 +4,8 @@
 
 ### 1. Accuracy vs. Baselines on Long-Context Benchmarks
 - **Benchmarks:**
-  - Long input: LongBench v1 (6 QA tasks) [DONE], RULER
-  - Long output reasoning: AIME 2024, MATH-500
+  - Long input: LongBench v1 (6 QA tasks) [DONE], RULER [DONE]
+  - Long output reasoning: AIME 2024 [], MATH-500 []
 - **Models:**
   - Llama 3.1 8B-Instruct — LongBench, RULER
   - DeepSeek-R1-Distill-Llama-8B — AIME 2024, MATH-500 (long reasoning / CoT)

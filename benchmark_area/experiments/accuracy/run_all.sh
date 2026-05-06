@@ -9,6 +9,13 @@ RULER_OUTDIR="results/ruler"
 AIME_OUTDIR="results/aime"
 MATH_OUTDIR="results/math500"
 
+python - <<'EOF'
+import torch, sys
+if not torch.cuda.is_available():
+    print("ERROR: no CUDA GPU visible", file=sys.stderr); sys.exit(1)
+print(f"GPU: {torch.cuda.get_device_name(0)}  free={torch.cuda.mem_get_info()[0]//1024**3}GB")
+EOF
+
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TORCH_EXTENSIONS_DIR="${TMPDIR:-/tmp}/torch_ext_$$"
@@ -90,13 +97,13 @@ run_math() {
 # run_ruler twilight_p0.85     --method twilight     --top_p 0.85
 
 # ── Reasoning (DeepSeek-R1-Distill-Llama-8B) ─────────────────────────────────
-run_aime dense_sdpa                --method dense_sdpa
-run_aime louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85
+# run_aime dense_sdpa                --method dense_sdpa
+# run_aime louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85
 # run_aime twilight_p0.85            --method twilight   --top_p 0.85
 # run_aime h2o_b512                  --method h2o        --budget_tokens 512
 
-# run_math dense_sdpa                --method dense_sdpa
-# run_math louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85
+run_math dense_sdpa                --method dense_sdpa               --max_samples 50
+run_math louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85 --max_samples 50
 # run_math twilight_p0.85            --method twilight   --top_p 0.85
 # run_math h2o_b512                  --method h2o        --budget_tokens 512
 
