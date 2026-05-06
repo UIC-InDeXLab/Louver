@@ -17,12 +17,14 @@
 - **Louver variants:** louver_ta, oracle threshold + budget (10%)
 - I. All baselines at comparable KV budget/fraction (10%)
 - II. Louver with threshold methods 
+- All almost on the same budget ratio (output fraction)
 - Key point: Louver wins because of zero false negatives
 
 
 ### 2. Latency vs. Sequence Length
 - X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
-- Compare: Louver GPU, FlashAttention, Quest, ClusterKV, H2O
+- Compare: Louver GPU, FlashAttention, Quest, H2O, Twilight
+- Compare: on CPU
 - Must show Louver faster than FlashAttention at large N
 - **Dense baselines (both required):**
   - `dense_eager` — standard PyTorch eager attention (slowest, reference)
@@ -37,25 +39,11 @@
 - Vary threshold τ or budget
 - Core theoretical claim — must be empirically confirmed
 
-### 3.1. Adaptive Threshold: Accuracy vs. Twilight
-- Both Twilight and Louver-TA run with the **same top-p threshold** (p=0.85)
-- Twilight: top-p prunes attention weights after computing full scores (has false negatives)
-- Louver-TA: top-p threshold passed to the TA filter (zero false negatives guaranteed)
-- Same model, same prompts, same scoring — apples-to-apples
-- Key point: same adaptive budget, Louver wins because TA filter has zero FN while Twilight drops tokens
-
-### 3.2. Adaptive Threshold: Latency vs. Twilight
-- X-axis: N (sequence length), Y-axis: per-step decode latency (ms)
-- Compare: Louver-TA (top-p threshold), Twilight (top-p), dense_flash
-- Twilight computes full attention then prunes → O(N) bandwidth, no speedup
-- Louver-TA prunes before attention → sub-linear in N
-- Key point: same threshold, Louver is faster because it avoids computing attention over pruned tokens
-
-### 3.3. Offloading experiments
+### 3.1. Offloading experiments
 - make an offloading version of louver and compare with offloading baselines.
 - RetrievalAttention and InfLLM.
 
-### 3.4. Memory usage
+### 3.2. Memory usage
 - simple
 
 ---
