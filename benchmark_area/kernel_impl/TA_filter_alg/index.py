@@ -243,6 +243,15 @@ class TAIndex:
             )
         buf_keys = self._buf_keys_arena.contiguous()
         buf_values = self._buf_values_arena.contiguous()
+        # Auto-expand arena if full
+        k_used = int(self.state["K_used"])
+        k_cap = int(self.state["K_cap"])
+        n_used = int(self.state["N_used"])
+        n_cap = int(self.state["N_pad"])
+        if k_used + K_BUF > k_cap or n_used + BUFFER_SIZE > n_cap:
+            new_n_cap = int(math.ceil((n_cap + self.cfg.n_growth) / BF) * BF)
+            new_k_cap = new_n_cap // BF
+            _expand_arena(self.state, new_k_cap, new_n_cap)
         pending = update_v1_1(self.state, buf_keys, buf_values)
         apply_publish(pending)
         self._reset_buffer_after_publish()
@@ -281,6 +290,16 @@ class TAIndex:
         if self._update_start_event is None:
             self._update_start_event = torch.cuda.Event(enable_timing=True)
             self._update_done_event = torch.cuda.Event(enable_timing=True)
+
+        # Auto-expand arena if full (must happen on attn stream before switching)
+        k_used = int(self.state["K_used"])
+        k_cap = int(self.state["K_cap"])
+        n_used = int(self.state["N_used"])
+        n_cap = int(self.state["N_pad"])
+        if k_used + K_BUF > k_cap or n_used + BUFFER_SIZE > n_cap:
+            new_n_cap = int(math.ceil((n_cap + self.cfg.n_growth) / BF) * BF)
+            new_k_cap = new_n_cap // BF
+            _expand_arena(self.state, new_k_cap, new_n_cap)
 
         with torch.cuda.stream(self._update_stream):
             self._update_start_event.record(self._update_stream)
