@@ -31,9 +31,11 @@ GENERIC_PROMPT_TEMPLATE = "Solve the following math problem step by step.\n\nPro
 
 def _normalize(s: str) -> str:
     s = s.strip()
+    s = s.replace("Ġ", " ")  # BPE Ġ artifact from tokenizer
     # Strip sizing/display commands: \left, \right, \big*, \dfrac→\frac
     s = re.sub(r"\\(left|right|big|Big|bigg|Bigg)\s*", "", s)
     s = re.sub(r"\\dfrac", r"\\frac", s)
+    s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)  # \text{Evelyn} → Evelyn
     # Remove all whitespace
     s = re.sub(r"\s+", "", s)
     s = s.lower()

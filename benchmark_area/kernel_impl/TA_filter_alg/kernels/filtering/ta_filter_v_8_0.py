@@ -47,9 +47,20 @@ def _load_ext():
     if _EXT is not None:
         return _EXT
     base = Path(__file__).resolve().parent
-    os.environ.setdefault("CUDA_HOME", "/usr/local/cuda-12.8")
-    os.environ["PATH"] = f"{os.environ['CUDA_HOME']}/bin:" + os.environ.get("PATH", "")
-    os.environ.setdefault("TORCH_CUDA_ARCH_LIST", "12.0")
+    # Detect CUDA_HOME: prefer env var, then search common paths
+    if "CUDA_HOME" not in os.environ:
+        for _p in ["/usr/local/cuda", "/usr/local/cuda-12.8", "/usr/local/cuda-12.4", "/usr/local/cuda-12"]:
+            if os.path.isdir(_p):
+                os.environ["CUDA_HOME"] = _p
+                break
+    os.environ["PATH"] = f"{os.environ.get('CUDA_HOME', '/usr/local/cuda')}/bin:" + os.environ.get("PATH", "")
+    # Detect arch from current GPU; fall back to env var or 8.0 (A100 safe default)
+    if "TORCH_CUDA_ARCH_LIST" not in os.environ:
+        try:
+            maj, min_ = torch.cuda.get_device_capability()
+            os.environ["TORCH_CUDA_ARCH_LIST"] = f"{maj}.{min_}"
+        except Exception:
+            os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
     _EXT = load(
         name="ta_filter_cuda_stage1_v7_10",
         sources=[
