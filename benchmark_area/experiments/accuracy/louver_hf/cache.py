@@ -85,8 +85,9 @@ class LouverCacheLayer(CacheLayerMixin):
         g = H_q // H_kv
         return (torch.arange(H_q, device=device, dtype=torch.int64) // g)
 
-    def get_mask_sizes(self, cache_position: torch.Tensor) -> tuple[int, int]:
-        query_length = cache_position.shape[0]
+    def get_mask_sizes(self, query_length) -> tuple[int, int]:
+        if not isinstance(query_length, int):
+            query_length = query_length.shape[0]
         return self._seq_len + query_length, 0
 
     def update(
@@ -174,6 +175,7 @@ class LouverCache(Cache):
         oracle: str = "sample_max",
         budget_fraction: float = 0.1,
         sample_size: int = 256,
+        top_p: float = 0.85,
         update_interval: int | None = None,
         full_index_cfg: IndexConfig | None = None,
         ta_index_cfg: TAIndexConfig | None = None,
@@ -185,6 +187,7 @@ class LouverCache(Cache):
             oracle=oracle,
             budget_fraction=budget_fraction,
             sample_size=sample_size,
+            top_p=top_p,
         )
 
         _update_interval = update_interval or TA_BUF  # default = 256

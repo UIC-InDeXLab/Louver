@@ -123,6 +123,7 @@ def make_louver_cache(model_config, args):
         oracle=args.oracle,
         budget_fraction=args.budget_fraction,
         sample_size=args.sample_size,
+        top_p=args.louver_top_p,
     )
 
 
@@ -163,14 +164,17 @@ def main():
     parser.add_argument("--method", default="louver_ta",
                         choices=["dense_sdpa", "dense_eager", "louver_ta", "h2o", "twilight"])
     parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--max_problems", type=int, default=10)
     parser.add_argument("--max_new_tokens", type=int, default=8192)
     parser.add_argument("--output_dir", default="results/aime")
     # Louver
     parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
-    parser.add_argument("--threshold_mode", default="budget", choices=["oracle", "budget"])
-    parser.add_argument("--oracle", default="sample_max", choices=["sample_max", "sample_mean_max"])
+    parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
+    parser.add_argument("--oracle", default="sample_top_p",
+                        choices=["sample_max", "sample_mean_max", "sample_top_p"])
     parser.add_argument("--budget_fraction", type=float, default=0.1)
     parser.add_argument("--sample_size", type=int, default=256)
+    parser.add_argument("--louver_top_p", type=float, default=0.85)
     # Baselines
     parser.add_argument("--budget_tokens", type=int, default=512)
     parser.add_argument("--h2o_heavy_ratio", type=float, default=0.5)
@@ -203,11 +207,16 @@ def main():
         configure_twilight(top_p=args.top_p, skip_first_layers=args.twilight_skip_layers)
 
     problems = load_aime_problems(args.year)
+    if args.max_problems is not None:
+        problems = problems[:args.max_problems]
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     if args.method.startswith("louver"):
-        tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
+        if args.oracle == "sample_top_p":
+            tag = f"louver_ta_top_p{args.louver_top_p}"
+        else:
+            tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
     elif args.method == "twilight":
         tag = f"twilight_p{args.top_p}"
     elif args.method == "h2o":

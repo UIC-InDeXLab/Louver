@@ -30,20 +30,42 @@ GENERIC_PROMPT_TEMPLATE = "Solve the following math problem step by step.\n\nPro
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
 def _normalize(s: str) -> str:
-    s = s.strip().lstrip("0") or "0"
+    s = s.strip()
+    # Strip sizing/display commands: \left, \right, \big*, \dfrac→\frac
+    s = re.sub(r"\\(left|right|big|Big|bigg|Bigg)\s*", "", s)
+    s = re.sub(r"\\dfrac", r"\\frac", s)
+    # Remove all whitespace
+    s = re.sub(r"\s+", "", s)
+    s = s.lower()
+    # Strip leading zeros on pure integers
     try:
-        # Normalize floats: 1.0 → 1
         f = float(s)
         return str(int(f)) if f == int(f) else str(f)
     except ValueError:
-        return s.lower().replace(" ", "")
+        return s or "0"
 
 
 def extract_boxed(text: str) -> str | None:
-    """Extract last \\boxed{...} content from model output."""
-    matches = re.findall(r"\\boxed\{([^}]*)\}", text)
-    if matches:
-        return matches[-1].strip()
+    """Extract last \\boxed{...} content, handling nested braces."""
+    results = []
+    i = 0
+    while i < len(text):
+        idx = text.find(r"\boxed{", i)
+        if idx == -1:
+            break
+        start = idx + len(r"\boxed{")
+        depth, j = 1, start
+        while j < len(text) and depth > 0:
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+            j += 1
+        if depth == 0:
+            results.append(text[start:j - 1].strip())
+        i = idx + 1
+    if results:
+        return results[-1]
     # Fallback: last number
     nums = re.findall(r"-?\d+(?:\.\d+)?", text)
     return nums[-1] if nums else None
@@ -85,6 +107,7 @@ def make_louver_cache(model_config, args):
         oracle=args.oracle,
         budget_fraction=args.budget_fraction,
         sample_size=args.sample_size,
+        top_p=args.louver_top_p,
     )
 
 
@@ -140,9 +163,11 @@ def main():
     # Louver
     parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
     parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
-    parser.add_argument("--oracle", default="sample_max")
+    parser.add_argument("--oracle", default="sample_top_p",
+                        choices=["sample_max", "sample_mean_max", "sample_top_p"])
     parser.add_argument("--budget_fraction", type=float, default=0.1)
     parser.add_argument("--sample_size", type=int, default=256)
+    parser.add_argument("--louver_top_p", type=float, default=0.85)
     # Baselines
     parser.add_argument("--budget_tokens", type=int, default=512,
                         help="Fixed KV token budget for baseline methods")
@@ -191,7 +216,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     model_tag = args.model.split("/")[-1]
     if args.method.startswith("louver"):
-        tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
+        if args.oracle == "sample_top_p":
+            tag = f"louver_ta_top_p{args.louver_top_p}"
+        else:
+            tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
     elif args.method == "twilight":
         tag = f"twilight_p{args.top_p}"
     elif args.method in BASELINE_METHODS:

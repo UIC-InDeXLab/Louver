@@ -21,16 +21,18 @@ class LouverThreshold:
     def __init__(
         self,
         mode: str = "oracle",          # "budget" | "oracle"
-        oracle: str = "sample_max",    # "sample_max" | "sample_mean_max"
+        oracle: str = "sample_max",    # "sample_max" | "sample_mean_max" | "sample_top_p"
         budget_fraction: float = 0.1,  # used when mode="budget"
         sample_size: int = 256,
+        top_p: float = 0.85,           # used when oracle="sample_top_p"
     ):
         assert mode in ("budget", "oracle")
-        assert oracle in ("sample_max", "sample_mean_max")
+        assert oracle in ("sample_max", "sample_mean_max", "sample_top_p")
         self.mode = mode
         self.oracle = oracle
         self.budget_fraction = budget_fraction
         self.sample_size = sample_size
+        self.top_p = top_p
 
         self.sample: torch.Tensor | None = None  # (H_kv, M, D) fp16
         self._filled = 0
@@ -96,9 +98,24 @@ class LouverThreshold:
         max_val = scores.max(dim=-1).values  # (H_q,)
         if self.oracle == "sample_max":
             return max_val.float()
-        else:  # sample_mean_max
+        elif self.oracle == "sample_mean_max":
             mean_val = scores.mean(dim=-1)
             return ((max_val + mean_val) / 2).float()
+        else:  # sample_top_p: threshold at score where cumulative softmax mass >= top_p
+            import torch.nn.functional as F
+            probs = F.softmax(scores.float(), dim=-1)           # (H_q, M)
+            sorted_probs, sort_idx = probs.sort(dim=-1, descending=True)
+            cumsum = sorted_probs.cumsum(dim=-1)                # (H_q, M)
+            # position of last token included (first cumsum >= top_p)
+            reached = (cumsum >= self.top_p)                    # (H_q, M)
+            # index of cutoff per head: first True position
+            cutoff = reached.long().argmax(dim=-1)              # (H_q,)
+            # gather the score at the cutoff position in sorted order
+            sorted_scores = scores.float().gather(
+                1, sort_idx
+            )                                                   # (H_q, M) sorted desc
+            tau = sorted_scores.gather(1, cutoff.unsqueeze(1)).squeeze(1)  # (H_q,)
+            return tau
 
     def get_subspace_threshold(
         self, q_f16: torch.Tensor, dim_slices: list[tuple[int, int]]

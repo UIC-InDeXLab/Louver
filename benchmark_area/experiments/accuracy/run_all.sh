@@ -21,7 +21,7 @@ TASKS="${TASKS:-narrativeqa,qasper,multifieldqa_en,hotpotqa,2wikimqa,musique}"
 RULER_TASKS="${RULER_TASKS:-niah_single,niah_multi,vt}"
 RULER_N="${RULER_N:-20}"
 SEQ_LEN="${SEQ_LEN:-32768}"
-TOTAL=9
+TOTAL=11
 STEP=0
 
 run() {
@@ -90,12 +90,14 @@ run_math() {
 # run_ruler twilight_p0.85     --method twilight     --top_p 0.85
 
 # ── Reasoning (DeepSeek-R1-Distill-Llama-8B) ─────────────────────────────────
-run_aime louver_ta_budget  --method louver_ta  --threshold_mode budget --budget_fraction 0.1
-run_aime twilight_p0.85    --method twilight   --top_p 0.85
-run_aime h2o_b512          --method h2o        --budget_tokens 512
+run_aime dense_sdpa                --method dense_sdpa
+run_aime louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85
+# run_aime twilight_p0.85            --method twilight   --top_p 0.85
+# run_aime h2o_b512                  --method h2o        --budget_tokens 512
 
-run_math louver_ta_budget  --method louver_ta  --threshold_mode budget --budget_fraction 0.1
-run_math twilight_p0.85    --method twilight   --top_p 0.85
-run_math h2o_b512          --method h2o        --budget_tokens 512
+# run_math dense_sdpa                --method dense_sdpa
+# run_math louver_ta_top_p0.85       --method louver_ta  --oracle sample_top_p --louver_top_p 0.85
+# run_math twilight_p0.85            --method twilight   --top_p 0.85
+# run_math h2o_b512                  --method h2o        --budget_tokens 512
 
 echo "ALL DONE" | tee -a logs/summary.log

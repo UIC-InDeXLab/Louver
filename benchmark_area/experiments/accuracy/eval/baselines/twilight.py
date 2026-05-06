@@ -52,6 +52,11 @@ def twilight_attention_forward(
         )
 
     scale = query.shape[-1] ** -0.5
+    # GQA: expand KV heads to match query heads
+    if key.shape[1] != query.shape[1]:
+        groups = query.shape[1] // key.shape[1]
+        key = key.repeat_interleave(groups, dim=1)
+        value = value.repeat_interleave(groups, dim=1)
     attn_weights = torch.matmul(query, key.transpose(-2, -1)) * scale
 
     if attention_mask is not None:
