@@ -177,6 +177,27 @@ def make_louver_cache(model_config, args):
     )
 
 
+def make_baseline_cache(method: str, args, context_len: int, num_layers: int):
+    if method == "twilight":
+        return None  # uses standard DynamicCache
+    eval_dir = Path(__file__).resolve().parent
+    sys.path.insert(0, str(eval_dir))
+    from baselines.h2o import H2OCache
+    from baselines.quest import QuestCache
+    from baselines.streaming_llm import StreamingLLMCache
+
+    budget = max(1, int(context_len * args.budget_fraction))
+    if method == "h2o":
+        heavy = max(1, int(budget * args.h2o_heavy_ratio))
+        return H2OCache(heavy_budget=heavy, recent_budget=budget - heavy, num_layers=num_layers)
+    elif method == "quest":
+        return QuestCache(chunk_size=args.quest_chunk_size, token_budget=budget, num_layers=num_layers)
+    elif method == "streaming_llm":
+        recent = max(1, budget - args.streaming_sink)
+        return StreamingLLMCache(sink_size=args.streaming_sink, recent_size=recent, num_layers=num_layers)
+    raise ValueError(method)
+
+
 def generate_one(model, tokenizer, prompt: str, max_new_tokens: int = 32, past_key_values=None):
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True,
                        max_length=131072).to(model.device)
@@ -196,33 +217,63 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
     parser.add_argument("--method", default="dense_sdpa",
-                        choices=["dense_sdpa", "dense_eager", "louver_full", "louver_ta"])
+                        choices=["dense_sdpa", "dense_eager", "louver_ta",
+                                 "h2o", "quest", "streaming_llm", "twilight"])
     parser.add_argument("--tasks", default=",".join(ALL_TASKS))
     parser.add_argument("--seq_len", type=int, default=32768)
     parser.add_argument("--n_samples", type=int, default=50)
     parser.add_argument("--output_dir", default="results/ruler")
     parser.add_argument("--seed", type=int, default=42)
     # Louver
-    parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
-    parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
+    parser.add_argument("--louver_variant", default="ta", choices=["ta"])
+    parser.add_argument("--threshold_mode", default="budget", choices=["oracle", "budget"])
     parser.add_argument("--oracle", default="sample_max", choices=["sample_max", "sample_mean_max"])
     parser.add_argument("--budget_fraction", type=float, default=0.1)
     parser.add_argument("--sample_size", type=int, default=256)
+    # Baselines
+    parser.add_argument("--h2o_heavy_ratio", type=float, default=0.5)
+    parser.add_argument("--quest_chunk_size", type=int, default=16)
+    parser.add_argument("--streaming_sink", type=int, default=4)
+    # Twilight
+    parser.add_argument("--top_p", type=float, default=0.85)
+    parser.add_argument("--twilight_skip_layers", type=int, default=2)
     args = parser.parse_args()
 
     random.seed(args.seed)
 
-    attn_impl = "sdpa" if args.method == "dense_sdpa" else "eager"
-    if args.method.startswith("louver"):
-        attn_impl = f"louver_{args.louver_variant}"
+    is_baseline = args.method in ("h2o", "quest", "streaming_llm", "twilight")
+    if args.method == "dense_sdpa":
+        attn_impl = "sdpa"
+    elif args.method == "louver_ta":
+        attn_impl = "louver_ta"
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         import louver_hf.attention
+    else:
+        attn_impl = args.method  # "h2o", "quest", "streaming_llm", "twilight", "eager"
+        eval_dir = Path(__file__).resolve().parent
+        sys.path.insert(0, str(eval_dir))
+        import baselines.h2o
+        import baselines.quest
+        import baselines.streaming_llm
+        import baselines.twilight
 
     model, tokenizer = load_model(args.model, attn_impl)
+    num_layers = model.config.num_hidden_layers
+
+    if args.method == "twilight":
+        from baselines.twilight import configure_twilight
+        configure_twilight(top_p=args.top_p, skip_first_layers=args.twilight_skip_layers)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    tag = f"{args.method}_{args.threshold_mode}_f{args.budget_fraction}_L{args.seq_len}"
+    if args.method == "louver_ta":
+        tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}_L{args.seq_len}"
+    elif args.method == "twilight":
+        tag = f"twilight_p{args.top_p}_L{args.seq_len}"
+    elif is_baseline:
+        tag = f"{args.method}_f{args.budget_fraction}_L{args.seq_len}"
+    else:
+        tag = f"{args.method}_L{args.seq_len}"
     model_tag = args.model.split("/")[-1]
 
     all_results = {}
@@ -236,8 +287,11 @@ def main():
         scores = []
         for sample in tqdm(samples, desc=task_name):
             past_kv = None
-            if args.method.startswith("louver"):
+            if args.method == "louver_ta":
                 past_kv = make_louver_cache(model.config, args)
+            elif is_baseline:
+                enc_len = min(len(tokenizer.encode(sample["prompt"])), args.seq_len)
+                past_kv = make_baseline_cache(args.method, args, enc_len, num_layers)
             pred = generate_one(model, tokenizer, sample["prompt"],
                                 max_new_tokens=32, past_key_values=past_kv)
             scores.append(score_ruler(pred, sample, task_name))
@@ -250,9 +304,10 @@ def main():
             json.dump({"task": task_name, "seq_len": args.seq_len, "avg": avg,
                        "n": len(scores), "scores": scores}, f, indent=2)
 
+    avg = sum(all_results.values()) / max(len(all_results), 1)
     summary = {"model": args.model, "method": args.method, "seq_len": args.seq_len,
-               "scores": all_results, "avg": sum(all_results.values()) / max(len(all_results), 1)}
-    print(f"\nOverall avg: {summary['avg']:.4f}", flush=True)
+               "budget_fraction": args.budget_fraction, "scores": all_results, "avg": avg}
+    print(f"\nOverall avg: {avg:.4f}", flush=True)
     with open(output_dir / f"{model_tag}_{tag}_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
 

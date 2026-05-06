@@ -126,6 +126,18 @@ def make_louver_cache(model_config, args):
     )
 
 
+def make_baseline_cache(args, num_layers: int):
+    if args.method == "twilight":
+        return None  # uses standard DynamicCache
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    budget = args.budget_tokens
+    if args.method == "h2o":
+        from baselines.h2o import H2OCache
+        heavy = max(1, int(budget * args.h2o_heavy_ratio))
+        return H2OCache(heavy_budget=heavy, recent_budget=budget - heavy, num_layers=num_layers)
+    raise ValueError(f"Unknown baseline: {args.method}")
+
+
 def generate_one(model, tokenizer, prompt: str, max_new_tokens: int, past_key_values=None):
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     input_len = inputs.input_ids.shape[1]
@@ -149,30 +161,59 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
     parser.add_argument("--method", default="louver_ta",
-                        choices=["dense_sdpa", "dense_eager", "louver_full", "louver_ta"])
+                        choices=["dense_sdpa", "dense_eager", "louver_ta", "h2o", "twilight"])
     parser.add_argument("--year", type=int, default=2024)
     parser.add_argument("--max_new_tokens", type=int, default=8192)
     parser.add_argument("--output_dir", default="results/aime")
     # Louver
     parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
-    parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
+    parser.add_argument("--threshold_mode", default="budget", choices=["oracle", "budget"])
     parser.add_argument("--oracle", default="sample_max", choices=["sample_max", "sample_mean_max"])
     parser.add_argument("--budget_fraction", type=float, default=0.1)
     parser.add_argument("--sample_size", type=int, default=256)
+    # Baselines
+    parser.add_argument("--budget_tokens", type=int, default=512)
+    parser.add_argument("--h2o_heavy_ratio", type=float, default=0.5)
+    # Twilight
+    parser.add_argument("--top_p", type=float, default=0.85)
+    parser.add_argument("--twilight_skip_layers", type=int, default=2)
     args = parser.parse_args()
 
-    attn_impl = "sdpa" if args.method == "dense_sdpa" else "eager"
-    if args.method.startswith("louver"):
+    BASELINE_METHODS = {"h2o", "twilight"}
+
+    if args.method in BASELINE_METHODS:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import baselines.h2o
+        import baselines.twilight
+        attn_impl = args.method
+    elif args.method == "dense_sdpa":
+        attn_impl = "sdpa"
+    elif args.method == "dense_eager":
+        attn_impl = "eager"
+    else:
         attn_impl = f"louver_{args.louver_variant}"
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         import louver_hf.attention
 
     model, tokenizer = load_model(args.model, attn_impl)
+    num_layers = model.config.num_hidden_layers
+
+    if args.method == "twilight":
+        from baselines.twilight import configure_twilight
+        configure_twilight(top_p=args.top_p, skip_first_layers=args.twilight_skip_layers)
+
     problems = load_aime_problems(args.year)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    tag = f"{args.method}_{args.threshold_mode}_f{args.budget_fraction}"
+    if args.method.startswith("louver"):
+        tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
+    elif args.method == "twilight":
+        tag = f"twilight_p{args.top_p}"
+    elif args.method == "h2o":
+        tag = f"h2o_b{args.budget_tokens}"
+    else:
+        tag = args.method
     model_tag = args.model.split("/")[-1]
 
     scores, records = [], []
@@ -181,6 +222,8 @@ def main():
         past_kv = None
         if args.method.startswith("louver"):
             past_kv = make_louver_cache(model.config, args)
+        elif args.method in BASELINE_METHODS:
+            past_kv = make_baseline_cache(args, num_layers)
 
         pred_text = generate_one(model, tokenizer, prompt,
                                  args.max_new_tokens, past_key_values=past_kv)

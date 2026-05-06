@@ -3,10 +3,19 @@
 ## Must-Have
 
 ### 1. Accuracy vs. Baselines on Long-Context Benchmarks
-- **Benchmarks:** RULER, LongBench, AIME
-- **Models:** Llama 3.1 8B + deepseek
-- **Baselines:** H2O, StreamingLLM, Quest, ClusterKV
-- I. All baselines at comparable KV budget/fraction
+- **Benchmarks:**
+  - Long input: LongBench v1 (6 QA tasks) [DONE], RULER
+  - Long output reasoning: AIME 2024, MATH-500
+- **Models:**
+  - Llama 3.1 8B-Instruct — LongBench, RULER
+  - DeepSeek-R1-Distill-Llama-8B — AIME 2024, MATH-500 (long reasoning / CoT)
+- **Baselines (implemented, same model + prompts as Louver):**
+  - H2O — eviction by cumulative attention score (heavy hitters + recent)
+  - StreamingLLM — eviction: sink tokens + recent window
+  - Quest — retrieval: page-level sign(q)·max(k) scoring, top-K chunks
+  - Twilight
+- **Louver variants:** louver_ta, oracle threshold + budget (10%)
+- I. All baselines at comparable KV budget/fraction (10%)
 - II. Louver with threshold methods 
 - Key point: Louver wins because of zero false negatives
 
@@ -28,8 +37,26 @@
 - Vary threshold τ or budget
 - Core theoretical claim — must be empirically confirmed
 
-### 4. Offloading experiments
+### 3.1. Adaptive Threshold: Accuracy vs. Twilight
+- Both Twilight and Louver-TA run with the **same top-p threshold** (p=0.85)
+- Twilight: top-p prunes attention weights after computing full scores (has false negatives)
+- Louver-TA: top-p threshold passed to the TA filter (zero false negatives guaranteed)
+- Same model, same prompts, same scoring — apples-to-apples
+- Key point: same adaptive budget, Louver wins because TA filter has zero FN while Twilight drops tokens
+
+### 3.2. Adaptive Threshold: Latency vs. Twilight
+- X-axis: N (sequence length), Y-axis: per-step decode latency (ms)
+- Compare: Louver-TA (top-p threshold), Twilight (top-p), dense_flash
+- Twilight computes full attention then prunes → O(N) bandwidth, no speedup
+- Louver-TA prunes before attention → sub-linear in N
+- Key point: same threshold, Louver is faster because it avoids computing attention over pruned tokens
+
+### 3.3. Offloading experiments
 - make an offloading version of louver and compare with offloading baselines.
+- RetrievalAttention and InfLLM.
+
+### 3.4. Memory usage
+- simple
 
 ---
 
@@ -80,4 +107,16 @@
 
 ## Priority Order
 
-1 → 3 → 2 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+1 → 3 → 3.1 → 3.2 → 2 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+
+## Notes
+- compare to fixed budget
+    - H2O, StreamingLLM, Quest
+- compare to adaptive
+    - Twilight
+- compare to offloading
+    - MagicPIG, RetrievalAttention, InfLLM
+- compare to long input
+    - RULER, LongBench
+- compare to long output
+    - MATH, AIME
