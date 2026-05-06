@@ -3,9 +3,9 @@
 ## Must-Have
 
 ### 1. Accuracy vs. Baselines on Long-Context Benchmarks
-- **Benchmarks:** RULER, LongBench v2, AIME
-- **Models:** Llama 3.1 8B + one larger (70B or Qwen 2.5 72B)
-- **Baselines:** H2O, StreamingLLM, MagicPIG, PQCache, RetrievalAttention, InfLLM, Quest, ClusterKV
+- **Benchmarks:** RULER, LongBench, AIME
+- **Models:** Llama 3.1 8B + deepseek
+- **Baselines:** H2O, StreamingLLM, Quest, ClusterKV
 - I. All baselines at comparable KV budget/fraction
 - II. Louver with threshold methods 
 - Key point: Louver wins because of zero false negatives
@@ -28,6 +28,8 @@
 - Vary threshold τ or budget
 - Core theoretical claim — must be empirically confirmed
 
+### 4. Offloading experiments
+- make an offloading version of louver and compare with offloading baselines.
 
 ---
 
