@@ -123,7 +123,8 @@ def make_louver_cache(model_config, args):
         oracle=args.oracle,
         budget_fraction=args.budget_fraction,
         sample_size=args.sample_size,
-        top_p=args.louver_top_p,
+        gap_search_frac=args.gap_search_frac,
+        gap_topk=args.gap_topk,
     )
 
 
@@ -170,11 +171,12 @@ def main():
     # Louver
     parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
     parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
-    parser.add_argument("--oracle", default="sample_top_p",
-                        choices=["sample_max", "sample_mean_max", "sample_top_p"])
+    parser.add_argument("--oracle", default="sample_gap",
+                        choices=["sample_max", "sample_mean_max", "sample_gap"])
     parser.add_argument("--budget_fraction", type=float, default=0.1)
-    parser.add_argument("--sample_size", type=int, default=256)
-    parser.add_argument("--louver_top_p", type=float, default=0.85)
+    parser.add_argument("--sample_size", type=int, default=512)
+    parser.add_argument("--gap_search_frac", type=float, default=1.0)
+    parser.add_argument("--gap_topk", type=int, default=3)
     # Baselines
     parser.add_argument("--budget_tokens", type=int, default=512)
     parser.add_argument("--h2o_heavy_ratio", type=float, default=0.5)
@@ -213,8 +215,8 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     if args.method.startswith("louver"):
-        if args.oracle == "sample_top_p":
-            tag = f"louver_ta_top_p{args.louver_top_p}"
+        if args.oracle == "sample_gap":
+            tag = f"louver_ta_gap_f{args.gap_search_frac}_k{args.gap_topk}"
         else:
             tag = f"louver_ta_{args.threshold_mode}_f{args.budget_fraction}"
     elif args.method == "twilight":

@@ -174,8 +174,9 @@ class LouverCache(Cache):
         threshold_mode: str = "oracle",
         oracle: str = "sample_max",
         budget_fraction: float = 0.1,
-        sample_size: int = 256,
-        top_p: float = 0.85,
+        sample_size: int = 512,
+        gap_search_frac: float = 1.0,
+        gap_topk: int = 3,
         update_interval: int | None = None,
         full_index_cfg: IndexConfig | None = None,
         ta_index_cfg: TAIndexConfig | None = None,
@@ -187,7 +188,8 @@ class LouverCache(Cache):
             oracle=oracle,
             budget_fraction=budget_fraction,
             sample_size=sample_size,
-            top_p=top_p,
+            gap_search_frac=gap_search_frac,
+            gap_topk=gap_topk,
         )
 
         _update_interval = update_interval or TA_BUF  # default = 256

@@ -128,6 +128,8 @@ def make_louver_cache(model_config, args):
         budget_fraction=args.budget_fraction,
         sample_size=args.sample_size,
         update_interval=args.update_interval,
+        gap_search_frac=args.gap_search_frac,
+        gap_topk=args.gap_topk,
     )
 
 
@@ -200,9 +202,11 @@ def main():
     # Louver options
     parser.add_argument("--louver_variant", default="ta", choices=["full", "ta"])
     parser.add_argument("--threshold_mode", default="oracle", choices=["oracle", "budget"])
-    parser.add_argument("--oracle", default="sample_max", choices=["sample_max", "sample_mean_max"])
+    parser.add_argument("--oracle", default="sample_max", choices=["sample_max", "sample_mean_max", "sample_gap"])
+    parser.add_argument("--gap_search_frac", type=float, default=1.0)
+    parser.add_argument("--gap_topk", type=int, default=3)
     parser.add_argument("--budget_fraction", type=float, default=0.1)
-    parser.add_argument("--sample_size", type=int, default=256)
+    parser.add_argument("--sample_size", type=int, default=512)
     parser.add_argument("--update_interval", type=int, default=256)
     parser.add_argument("--max_input_length", type=int, default=32768)
     args = parser.parse_args()
@@ -220,7 +224,11 @@ def main():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    tag = f"{args.method}_{args.threshold_mode}_f{args.budget_fraction}"
+    if args.threshold_mode == "oracle":
+        oracle_tag = args.oracle if args.oracle != "sample_gap" else f"gap_f{args.gap_search_frac}_k{args.gap_topk}"
+        tag = f"{args.method}_oracle_{oracle_tag}"
+    else:
+        tag = f"{args.method}_{args.threshold_mode}_f{args.budget_fraction}"
     model_tag = args.model.split("/")[-1]
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip() in ALL_TASKS]

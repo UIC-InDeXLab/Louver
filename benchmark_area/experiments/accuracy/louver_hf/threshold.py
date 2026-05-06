@@ -3,7 +3,11 @@ Threshold computation for kernel_impl indices.
 
 Two modes:
   - 'budget': fixed fraction f of tokens retrieved; threshold estimated from sample.
-  - 'oracle': threshold from reservoir sample (SampleMax or SampleMeanMax).
+  - 'oracle': threshold from reservoir sample.
+    - 'sample_max': threshold = max sample score (very aggressive).
+    - 'sample_mean_max': threshold = (max + mean) / 2 (~9% retrieval).
+    - 'sample_gap': cut at largest score gap in top gap_search_frac of sample.
+      Among top-gap_topk gaps by magnitude, pick the one at highest score level.
 
 Works with raw (un-normalized) fp16 queries and keys, matching kernel_impl expectations.
 """
@@ -20,19 +24,21 @@ class LouverThreshold:
 
     def __init__(
         self,
-        mode: str = "oracle",          # "budget" | "oracle"
-        oracle: str = "sample_max",    # "sample_max" | "sample_mean_max" | "sample_top_p"
-        budget_fraction: float = 0.1,  # used when mode="budget"
+        mode: str = "oracle",           # "budget" | "oracle"
+        oracle: str = "sample_max",     # "sample_max" | "sample_mean_max" | "sample_gap"
+        budget_fraction: float = 0.1,   # used when mode="budget"
         sample_size: int = 256,
-        top_p: float = 0.85,           # used when oracle="sample_top_p"
+        gap_search_frac: float = 0.5,   # sample_gap: search top fraction for gaps
+        gap_topk: int = 3,              # sample_gap: consider top-k gaps by magnitude
     ):
         assert mode in ("budget", "oracle")
-        assert oracle in ("sample_max", "sample_mean_max", "sample_top_p")
+        assert oracle in ("sample_max", "sample_mean_max", "sample_gap")
         self.mode = mode
         self.oracle = oracle
         self.budget_fraction = budget_fraction
         self.sample_size = sample_size
-        self.top_p = top_p
+        self.gap_search_frac = gap_search_frac
+        self.gap_topk = gap_topk
 
         self.sample: torch.Tensor | None = None  # (H_kv, M, D) fp16
         self._filled = 0
@@ -79,6 +85,35 @@ class LouverThreshold:
         s = self.sample[:, :M, :].float()  # (H_kv, M, D)
         return torch.einsum("hgd,hmd->hgm", q_3d, s).reshape(H_q, M)
 
+    def _gap_threshold(self, scores: torch.Tensor) -> torch.Tensor:
+        """
+        scores: (H_q, M) float32
+        Returns (H_q,) threshold via score-gap oracle.
+
+        Algorithm:
+          1. Sort scores descending per head.
+          2. Search top gap_search_frac of sorted scores for gaps.
+          3. Find top gap_topk gaps by magnitude.
+          4. Among those, pick the one at the highest score level
+             (smallest position = fewest tokens retrieved).
+          5. Threshold = score just below that gap.
+        """
+        H_q, M = scores.shape
+        search_k = max(2, int(self.gap_search_frac * M))
+        search_k = min(search_k, M)
+
+        sorted_s, _ = scores.sort(dim=-1, descending=True)  # (H_q, M)
+        top_s = sorted_s[:, :search_k]                       # (H_q, search_k)
+        gaps = top_s[:, :-1] - top_s[:, 1:]                  # (H_q, search_k-1)
+
+        # top gap_topk gaps by magnitude, then pick the one at highest score (min pos)
+        k = min(self.gap_topk, gaps.shape[1])
+        _, topk_pos = gaps.topk(k, dim=-1)                    # (H_q, k) — positions of largest gaps
+        best_pos = topk_pos.min(dim=-1).values                # (H_q,) — earliest = highest score
+        # threshold = score just below the gap = top_s[:, best_pos + 1]
+        threshold = top_s.gather(1, (best_pos + 1).unsqueeze(1)).squeeze(1)
+        return threshold
+
     def get_threshold_ta(self, q_f16: torch.Tensor) -> torch.Tensor:
         """
         Returns (H_q,) float32 threshold for TAIndex.attend().
@@ -92,19 +127,17 @@ class LouverThreshold:
         if self.mode == "budget":
             k = max(1, int(self.budget_fraction * self._filled))
             topk_vals = scores.topk(k, dim=-1).values  # (H_q, k)
-            return topk_vals[:, -1].float()  # min of top-k
+            return topk_vals[:, -1].float()
 
         # oracle modes
-        max_val = scores.max(dim=-1).values  # (H_q,)
         if self.oracle == "sample_max":
-            return max_val.float()
+            return scores.max(dim=-1).values.float()
         elif self.oracle == "sample_mean_max":
+            max_val = scores.max(dim=-1).values
             mean_val = scores.mean(dim=-1)
             return ((max_val + mean_val) / 2).float()
-        else:  # sample_top_p: keep top (1-top_p) fraction by score rank
-            k = max(1, int((1.0 - self.top_p) * self._filled))
-            topk_vals = scores.topk(k, dim=-1).values           # (H_q, k)
-            return topk_vals[:, -1].float()                     # min of top-k = threshold
+        else:  # sample_gap
+            return self._gap_threshold(scores).float()
 
     def get_subspace_threshold(
         self, q_f16: torch.Tensor, dim_slices: list[tuple[int, int]]
@@ -132,16 +165,16 @@ class LouverThreshold:
 
         if self.mode == "budget":
             k = max(1, int(self.budget_fraction * self._filled))
-            topk_idx = scores.topk(k, dim=-1).indices  # (H_q, k)
+            topk_idx = scores.topk(k, dim=-1).indices
         else:
-            # oracle: use keys above oracle threshold as the "top" set
-            max_val = scores.max(dim=-1).values  # (H_q,)
-            if self.oracle == "sample_mean_max":
-                tau = (max_val + scores.mean(dim=-1)) / 2
-            else:
-                tau = max_val
-            # find indices above tau; fall back to top-1 if none
-            above = (scores >= tau.unsqueeze(-1))  # (H_q, M)
+            # oracle: derive the threshold, then find indices above it
+            if self.oracle == "sample_max":
+                tau = scores.max(dim=-1).values
+            elif self.oracle == "sample_mean_max":
+                tau = (scores.max(dim=-1).values + scores.mean(dim=-1)) / 2
+            else:  # sample_gap
+                tau = self._gap_threshold(scores)
+            above = (scores >= tau.unsqueeze(-1))
             k = max(1, int(above.float().sum(dim=-1).max().item()))
             topk_idx = scores.topk(k, dim=-1).indices
 
@@ -150,13 +183,12 @@ class LouverThreshold:
 
         ths = []
         for (s, e) in dim_slices:
-            q_sub = q_3d[:, :, s:e].float()                      # (H_kv, g, d_s)
-            s_sub = sample_f16[:, :, s:e].float()                 # (H_kv, M, d_s)
+            q_sub = q_3d[:, :, s:e].float()
+            s_sub = sample_f16[:, :, s:e].float()
             sub_scores = torch.einsum("hgd,hmd->hgm", q_sub, s_sub).reshape(H_q, M)
-            # clamp topk_idx to valid range
             idx = topk_idx.clamp(0, M - 1)
-            sub_topk = sub_scores.gather(1, idx)                  # (H_q, k)
-            ths.append(sub_topk.min(dim=-1).values.half())        # (H_q,)
+            sub_topk = sub_scores.gather(1, idx)
+            ths.append(sub_topk.min(dim=-1).values.half())
 
         th = torch.stack(ths, dim=0)  # (S, H_q) fp16
         q_norms = torch.stack(
