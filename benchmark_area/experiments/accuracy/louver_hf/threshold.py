@@ -102,7 +102,7 @@ class LouverThreshold:
             mean_val = scores.mean(dim=-1)
             return ((max_val + mean_val) / 2).float()
         else:  # sample_top_p: keep top (1-top_p) fraction by score rank
-            k = max(1, int((1.0 - self.top_p) * M))
+            k = max(1, int((1.0 - self.top_p) * self._filled))
             topk_vals = scores.topk(k, dim=-1).values           # (H_q, k)
             return topk_vals[:, -1].float()                     # min of top-k = threshold
 
