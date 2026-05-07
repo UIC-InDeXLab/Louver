@@ -84,37 +84,31 @@ Compare Louver offload vs MagicPIG (LSH), RetrievalAttention (HNSW), InfLLM (IVF
 - Fraction of keys surviving filter across sequence lengths
 - Confirms the ~90% pruning claim
 
-### 5. Accuracy–Efficiency Trade-off Curve
-- X-axis: fraction of keys retrieved (or budget), Y-axis: accuracy
-- Louver's Pareto frontier vs. baselines
-- Shows zero-FN recall guarantee translates to better accuracy per compute
-
 ---
 
 ## Ablations (appendix)
 
-### 7. Index Design Ablations
+### 7. Threshold Oracle Ablation (`experiments/threshold_oracle`)
+- Oracles: sample_max, sample_topk (k=2,5,10), sample_mean_max, sample_gap, budget (fraction=0.05/0.10/0.15)
+- Report per variant: fraction of tokens retrieved (mean ± std) + recall@10% vs exact top-10% (mean ± std)
+- Goal: which oracle gives best accuracy vs sparsity trade-off? Justify oracle choice in main experiments
+
+**Input:** same `.pt` captures from Exp 2 (`latency/captures/`) — no model inference needed
+- `meta_llama_Llama_3.2_3B_Instruct_layer14_N40000.pt` — Llama-3.2-3B-Instruct, layer 14, N=40k
+- `Qwen_Qwen2.5_7B_Instruct_layer14_N40000.pt` — Qwen2.5-7B-Instruct, layer 14, N=40k
+- `Qwen_Qwen2.5_14B_Instruct_layer24_N40000.pt` — Qwen2.5-14B-Instruct, layer 24, N=40k
+
+**Dataset:** one AIME 2024 problem (same as Exp 2 captures), up to 40k generated tokens
+
+**Workflow:** `bash threshold_oracle/run.sh` → `results/threshold_oracle_all.json` + per-model CSVs
+
+### 8. Index Design Ablations
 - Number of subspaces S
 - Group size r
 - Query 1 (full-subspace filter) vs. Query 2 (TA filter)
 
-### 8. Threshold Oracle Ablation
-- Louver-TA + Louver-Full × all oracles: sample_max, sample_meanmax, sample_gap, budget (fraction=0.1)
-- Small subsample of same 6 QA tasks (10 examples/task)
-- Report per variant: accuracy (avg F1) + fraction of tokens retrieved (mean ± std across layers/heads/steps/examples)
-- Instrumentation: log retrieved/total tokens per decode step in LouverCacheLayer
-- Goal: which oracle gives best accuracy vs sparsity trade-off? Justify oracle choice in main experiments
-
 ### 9. Buffer Size B Effect
 - Update frequency vs. accuracy trade-off
-
----
-
-## Other Experiments
-
-### 11
-- If time!
-- Show AUC for speed vs. acc by changing the budgets.
 
 ---
 
