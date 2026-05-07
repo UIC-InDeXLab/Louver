@@ -25,10 +25,9 @@ Ordered by priority.
 
 ### 2. Latency vs. Sequence Length (`experiments/latency`)
 - X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
-- Compare: Louver GPU, FlashAttention, Quest, H2O, Twilight
+- Compare: Louver GPU, FlashAttention,Twilight
 - Compare: on CPU
 - Must show Louver faster than `FlashAttention` at large N
-- Others to compare to `Twilight`
 - **Dense baselines (both required):**
   - `dense_eager` — standard PyTorch eager attention (slowest, reference)
   - `dense_flash` — SDPA with FlashAttention backend (`SDPBackend.FLASH_ATTENTION`)
