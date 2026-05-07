@@ -263,7 +263,8 @@ def twilight_recall(scores_np: np.ndarray, top_idx: torch.Tensor, k: int) -> flo
 # ── Per-capture benchmark ──────────────────────────────────────────────────────
 
 def run_capture(cap: "CaptureState", layer: int,
-                n_samples: int, rng: np.random.RandomState) -> dict:
+                n_samples: int, rng: np.random.RandomState,
+                max_n: int | None = None) -> dict:
     from tqdm import tqdm
 
     queries_cpu, keys_cpu, _ = cap.to_layer_tensors(layer)
@@ -274,7 +275,13 @@ def run_capture(cap: "CaptureState", layer: int,
     H_kv      = keys.shape[0]
     q_to_kv   = [h * H_kv // H_q for h in range(H_q)]
 
+    if max_n is not None and max_n < N:
+        N       = max_n
+        queries = queries[:, :N, :]
+        keys    = keys[:, :N, :]
+
     n_prefill = int(cap.prompt_length) if cap.prompt_length else max(1, N // 20)
+    n_prefill = min(n_prefill, N - 1)
     k_max     = max(K_VALUES)
     min_n     = k_max + 10
 
@@ -386,6 +393,8 @@ def parse_args():
     p.add_argument("--input-qkv", type=Path, nargs="+", required=True)
     p.add_argument("--n-samples", type=int, default=100,
                    help="Random decode queries per capture (default 100).")
+    p.add_argument("--max-n", type=int, default=None,
+                   help="Truncate key sequence to first N tokens (default: full capture).")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--output-csv", type=Path, default=None)
     return p.parse_args()
@@ -394,7 +403,7 @@ def parse_args():
 def main():
     args = parse_args()
     rng  = np.random.RandomState(args.seed)
-    print(f"Device: {DEVICE}  n_samples={args.n_samples}")
+    print(f"Device: {DEVICE}  n_samples={args.n_samples}  max_n={args.max_n or 'full'}")
 
     all_res: dict = {}
     stems = []
@@ -405,7 +414,7 @@ def main():
         layers = cap.layer_ids()
         layer  = layers[len(layers) // 2]
         print(f"Layer {layer}  H_q={cap.to_layer_tensors(layer)[0].shape[0]}")
-        res   = run_capture(cap, layer, args.n_samples, rng)
+        res   = run_capture(cap, layer, args.n_samples, rng, max_n=args.max_n)
         all_res = merge(all_res, res)
         stems.append(pt.stem[:16])
 
