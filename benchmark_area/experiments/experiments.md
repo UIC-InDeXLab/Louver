@@ -45,20 +45,36 @@ Ordered by priority.
 **Phase 2 — Sparse-attention recall** (Louver vs fixed-budget sparse-attn methods):
   - Louver (oracle threshold), Quest, StreamingLLM, Twilight
 
+**Models:** Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct, Qwen2.5-14B-Instruct
+
 **Implementation:** `recall_bench.py`
   - Input: same `.pt` captures from Exp 2 (`latency/captures/`)
-  - ANN indices built once per KV head over full key set; 100 query samples per capture
+  - ANN indices built once per KV head; 100 query samples, N=8k keys
   - GPU-accelerated exact score computation for ground truth top-k
   - Output: recall table + `reports/recall_<model>.csv`
 
 **Workflow:** `bash run.sh` (comment in/out captures per machine)
 
-### 3.1. Offloading experiments
-- make an offloading version of louver and compare with offloading baselines.
-- RetrievalAttention and InfLLM.
+### 3.1. Offloading experiments (`experiments/offload`)
+Compare Louver offload vs MagicPIG (LSH), RetrievalAttention (HNSW), InfLLM (IVF) on LongBench.
 
-### 3.2. Memory usage
-- simple
+**What each method does (all KV pairs on CPU):**
+- **Louver**: parents (cluster centers from TA index) stay on GPU; GPU halfspace filter → selected token indices → gather children from CPU → transfer to GPU → SDPA
+- **RetrievalAttention**: HNSW index on CPU; CPU HNSW search → gather top-k KV from CPU → transfer → SDPA
+- **InfLLM**: IVF clustering on CPU; CPU IVF search → gather top clusters → transfer → SDPA
+- **MagicPIG**: LSH hash table on CPU; CPU hash lookup → gather matching bucket KV → transfer → SDPA
+
+**Budget:** 15% of tokens retrieved (budget_fraction=0.15, same as accuracy Exp 1)
+
+**Metrics measured:**
+- Accuracy: LongBench F1 (same tasks as Exp 1, Llama-3.1-8B-Instruct)
+- Search time: GPU filter time (Louver) or CPU index search time (baselines) — ms/step
+- Transfer time: CPU→GPU data movement for retrieved KV — ms/step
+- GPU memory: persistent objects on GPU per layer (parent centers for Louver; ~0 for baselines)
+
+**Implementation:** `offload/` directory — one file per method + `run_longbench_offload.py`
+
+**Workflow:** `bash offload/run.sh`
 
 ---
 

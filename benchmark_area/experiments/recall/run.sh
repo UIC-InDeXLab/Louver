@@ -14,5 +14,7 @@ python "$SCRIPT" \
   --max-n "$MAX_N" \
   --seed "$SEED" \
   --input-qkv \
-    "$CAPTURES/meta_llama_Llama_3.2_3B_Instruct_layer14_N40000.pt"
-#   "$CAPTURES/Qwen_Qwen2.5_7B_Instruct_layer14_N40000.pt"
+  # "$CAPTURES/Qwen_Qwen2.5_14B_Instruct_layer24_N40000.pt"
+
+    # "$CAPTURES/Qwen_Qwen2.5_7B_Instruct_layer14_N40000.pt"
+    # "$CAPTURES/meta_llama_Llama_3.2_3B_Instruct_layer14_N40000.pt"
