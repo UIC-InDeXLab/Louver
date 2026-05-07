@@ -1,0 +1,68 @@
+Evaluating n_tokens=15000
+--------------------------------------------------------------------------------------------------------------------------------------------
+N=15461 keys (461 prompt + 15000 generated), K=3866, queries=30
+Memory: keys=63 MB on GPU (torch.float32), queries=92 MB on CPU
+Clustering: kmeans ...
+  ball_centroid         scanned=0.7386  pruned=0.2614  search=0.150ms  build=323.6ms  ratio=0.989  speedup=1.01x
+  min_enclosing_ball    scanned=0.8122  pruned=0.1878  search=0.145ms  build=345.9ms  ratio=1.062  speedup=0.94x
+  aabb                  scanned=0.2508  pruned=0.7492  search=0.345ms  build=324.6ms  ratio=0.751  speedup=1.33x
+  ellipsoid             scanned=0.4312  pruned=0.5688  search=0.255ms  build=325.7ms  ratio=1.056  speedup=0.95x
+  outlier_aabb          scanned=0.1861  pruned=0.8139  search=0.949ms  build=328.9ms  ratio=0.936  speedup=1.07x
+  outlier_ball_centroid  scanned=0.5873  pruned=0.4127  search=0.647ms  build=327.0ms  ratio=1.087  speedup=0.92x
+Clustering: random_proj ...
+  ball_centroid         scanned=0.8891  pruned=0.1109  search=0.149ms  build=19.3ms  ratio=1.139  speedup=0.88x
+  min_enclosing_ball    scanned=0.8056  pruned=0.1944  search=0.146ms  build=41.7ms  ratio=1.056  speedup=0.95x
+  aabb                  scanned=0.2713  pruned=0.7287  search=0.344ms  build=20.5ms  ratio=0.771  speedup=1.30x
+  ellipsoid             scanned=0.5992  pruned=0.4008  search=0.250ms  build=21.4ms  ratio=1.224  speedup=0.82x
+  outlier_aabb          scanned=0.2086  pruned=0.7914  search=0.955ms  build=24.9ms  ratio=0.959  speedup=1.04x
+  outlier_ball_centroid  scanned=0.6362  pruned=0.3638  search=0.643ms  build=22.9ms  ratio=1.136  speedup=0.88x
+Clustering: pq_subspace ...
+  ball_centroid         scanned=0.8741  pruned=0.1259  search=0.151ms  build=125.6ms  ratio=1.124  speedup=0.89x
+  min_enclosing_ball    scanned=0.7780  pruned=0.2220  search=0.148ms  build=148.1ms  ratio=1.028  speedup=0.97x
+  aabb                  scanned=0.2797  pruned=0.7203  search=0.345ms  build=127.4ms  ratio=0.780  speedup=1.28x
+  ellipsoid             scanned=0.5708  pruned=0.4292  search=0.255ms  build=128.1ms  ratio=1.196  speedup=0.84x
+  outlier_aabb          scanned=0.2324  pruned=0.7676  search=0.946ms  build=132.3ms  ratio=0.982  speedup=1.02x
+  outlier_ball_centroid  scanned=0.5928  pruned=0.4072  search=0.642ms  build=129.3ms  ratio=1.093  speedup=0.92x
+Clustering: kcenter ...
+  ball_centroid         scanned=0.7933  pruned=0.2067  search=0.150ms  build=787.2ms  ratio=1.043  speedup=0.96x
+  min_enclosing_ball    scanned=0.8228  pruned=0.1772  search=0.150ms  build=809.8ms  ratio=1.073  speedup=0.93x
+  aabb                  scanned=0.1084  pruned=0.8916  search=0.345ms  build=789.1ms  ratio=0.608  speedup=1.64x
+  ellipsoid             scanned=0.3614  pruned=0.6386  search=0.254ms  build=789.8ms  ratio=0.986  speedup=1.01x
+  outlier_aabb          scanned=0.0704  pruned=0.9296  search=0.945ms  build=794.6ms  ratio=0.820  speedup=1.22x
+  outlier_ball_centroid  scanned=0.6681  pruned=0.3319  search=0.641ms  build=790.5ms  ratio=1.168  speedup=0.86x
+Clustering: pca_pq ...
+  ball_centroid         scanned=0.8048  pruned=0.1952  search=0.149ms  build=110.1ms  ratio=1.055  speedup=0.95x
+  min_enclosing_ball    scanned=0.8424  pruned=0.1576  search=0.147ms  build=132.6ms  ratio=1.092  speedup=0.92x
+  aabb                  scanned=0.3161  pruned=0.6839  search=0.344ms  build=111.6ms  ratio=0.816  speedup=1.23x
+  ellipsoid             scanned=0.5182  pruned=0.4818  search=0.256ms  build=112.4ms  ratio=1.143  speedup=0.87x
+  outlier_aabb          scanned=0.2422  pruned=0.7578  search=0.945ms  build=116.4ms  ratio=0.992  speedup=1.01x
+  outlier_ball_centroid  scanned=0.6653  pruned=0.3347  search=0.646ms  build=113.7ms  ratio=1.165  speedup=0.86x
+Clustering: whitened_pq ...
+  ball_centroid         scanned=0.8821  pruned=0.1179  search=0.149ms  build=54.7ms  ratio=1.132  speedup=0.88x
+  min_enclosing_ball    scanned=0.7926  pruned=0.2074  search=0.149ms  build=77.1ms  ratio=1.043  speedup=0.96x
+  aabb                  scanned=0.2868  pruned=0.7132  search=0.344ms  build=56.8ms  ratio=0.787  speedup=1.27x
+  ellipsoid             scanned=0.5757  pruned=0.4243  search=0.253ms  build=57.3ms  ratio=1.201  speedup=0.83x
+  outlier_aabb          scanned=0.2377  pruned=0.7623  search=0.946ms  build=62.1ms  ratio=0.988  speedup=1.01x
+  outlier_ball_centroid  scanned=0.6204  pruned=0.3796  search=0.640ms  build=58.3ms  ratio=1.120  speedup=0.89x
+Clustering: batch_nn ...
+  ball_centroid         scanned=0.8070  pruned=0.1930  search=0.154ms  build=11713.4ms  ratio=1.057  speedup=0.95x
+  min_enclosing_ball    scanned=0.8876  pruned=0.1124  search=0.151ms  build=11736.1ms  ratio=1.138  speedup=0.88x
+  aabb                  scanned=0.2501  pruned=0.7499  search=0.350ms  build=11714.2ms  ratio=0.750  speedup=1.33x
+  ellipsoid             scanned=0.4797  pruned=0.5203  search=0.262ms  build=11715.5ms  ratio=1.105  speedup=0.91x
+  outlier_aabb          scanned=0.1301  pruned=0.8699  search=0.952ms  build=11718.2ms  ratio=0.880  speedup=1.14x
+  outlier_ball_centroid  scanned=0.6156  pruned=0.3844  search=0.644ms  build=11716.6ms  ratio=1.116  speedup=0.90x
+Best at n_tokens=15000: kcenter + aabb  scanned=0.1084  ratio=0.608  speedup=1.64x
+
+============================================================================================================================================
+Best Per n_tokens
+--------------------------------------------------------------------------------------------------------------------------------------------
+  n_tokens        N CLUSTERING             ENCLOSING               SCANNED   PRUNED  SEARCH_ms  BUILD_ms     g   RATIO  SPEEDUP
+--------------------------------------------------------------------------------------------------------------------------------------------
+      4000     4461 pca_pq                 ball_centroid            0.8908   0.1092      0.141     122.2   1.0   1.141    0.88x
+      5000     5461 whitened_pq            min_enclosing_ball       0.9031   0.0969      0.144      43.3   1.0   1.153    0.87x
+      6000     6461 kcenter                aabb                     0.6028   0.3972      0.166     190.4   2.0   1.103    0.91x
+      8000     8461 kcenter                aabb                     0.3571   0.6429      0.209     270.6   2.0   0.857    1.17x
+     10000    10461 kcenter                aabb                     0.2314   0.7686      0.250     393.9   2.0   0.731    1.37x
+     12000    12461 kcenter                aabb                     0.1636   0.8364      0.289     535.6   2.0   0.664    1.51x
+     15000    15461 kcenter                aabb                     0.1084   0.8916      0.345     789.1   2.0   0.608    1.64x
+============================================================================================================================================

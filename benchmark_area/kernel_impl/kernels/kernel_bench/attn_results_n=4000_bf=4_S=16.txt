@@ -1,0 +1,26 @@
+Loading capture from ../../../quick_pruning/capture_qkv_4000_meta-llama_Llama-3.2-3B-Instruct.pt ...
+search micro-bench: layer 15 H_q=24 H_kv=8 N=4461 D=128 S=16
+----------------------------------------------------------------------
+  search_v15_0             v15.0      0.092 ms/query  [build_v2_1]
+  search_v18_0             v18.0      0.096 ms/query  [build_v2_1]
+  search_v18_1             v18.1      0.062 ms/query  [build_v2_1]
+  torch_baseline           -          0.021 ms/query
+  matmul baseline          -          0.021 ms/query
+  torch_baseline fp16      -          0.018 ms/query
+  matmul baseline fp16     -          0.014 ms/query
+----------------------------------------------------------------------
+Attention (fused search + softmax + @V → (H_q, D_v))
+  attention_v1_15          skipped
+  attention_v1_15_s16      v1.15_s16     0.038 ms/query  [build_v2_4]
+  attention_v1_5           v1.5       0.125 ms/query  [build_v2_4]
+  dense attn fp32          -          0.080 ms/query
+  dense attn fp16          -          0.055 ms/query
+  sdpa fp32                -          0.707 ms/query
+  sdpa fp16                -          0.033 ms/query
+  correctness[tight(pruned)  ]: max_abs_diff=4.2850e-01  rel=4.1375e-01 (attention_v1_15_s16)
+  correctness[loose(all pass)]: max_abs_diff=1.3351e-05  rel=1.2892e-05 (attention_v1_15_s16)
+  correctness[loose(all pass)]: max_abs_diff=1.4871e-05  rel=1.4359e-05 (attention_v1_5)
+----------------------------------------------------------------------
+Fastest: matmul baseline fp16 at 0.014 ms/query
+Skipped kernels:
+  attention_v1_15          skipped

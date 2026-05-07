@@ -1,0 +1,5 @@
+- [x] Check the distribution of scores.
+- [x] Check (visually) how different thresholding algorithms work.
+- [x] See if this theorem holds: "Having a fixed k is not good for all tokens generated."
+    - Some tokens depend on more previous tokens, some depend on less (Verified).
+    - The thinking and planning depends more on previous tokens.

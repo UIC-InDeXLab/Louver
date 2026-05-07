@@ -1,0 +1,281 @@
+Loading captured QKV from ../quick_pruning/capture_qkv_12000_Qwen_Qwen2.5-7B-Instruct.pt ...
+Layer 15: H_kv=4, H_q=28, N=12499, D=128
+bf=4, 30 queries, topk=20
+==============================================================================================================
+
+hier_S4_L1: building 1-level hierarchy with 4 subspaces ...
+  subspace dims=(0, 32): L3125 → 12499 points
+  build=605.9ms  search=1.578ms  missed=0
+  scanned=0.6939  pruned=0.3061
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      0    3125    3125.0     2613.3     0.8363
+
+  Asymptotic model:
+    gate_cost   = 3125.0 dot-equiv
+    scan_cost   = 8673.3 points
+    total / N   = 0.9439
+    speedup     = 1.06x
+
+hier_S4_L2: building 2-level hierarchy with 4 subspaces ...
+  subspace dims=(0, 32): L782 → L3125 → 12499 points
+  build=496.1ms  search=1.067ms  missed=0
+  scanned=0.6927  pruned=0.3073
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      1     782     782.0      724.2     0.9260
+      0    3125    3058.6     2612.4     0.8534
+
+  Asymptotic model:
+    gate_cost   = 3840.6 dot-equiv
+    scan_cost   = 8658.6 points
+    total / N   = 1.0000
+    speedup     = 1.00x
+
+hier_S4_L3: building 3-level hierarchy with 4 subspaces ...
+  subspace dims=(0, 32): L196 → L782 → L3125 → 12499 points
+  build=517.8ms  search=1.510ms  missed=0
+  scanned=0.6934  pruned=0.3066
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      2     196     196.0      177.9     0.9079
+      1     782     763.8      726.2     0.9507
+      0    3125    3060.5     2611.6     0.8527
+
+  Asymptotic model:
+    gate_cost   = 4020.3 dot-equiv
+    scan_cost   = 8666.7 points
+    total / N   = 1.0150
+    speedup     = 0.99x
+
+hier_S4_L4: building 4-level hierarchy with 4 subspaces ...
+  subspace dims=(0, 32): L49 → L196 → L782 → L3125 → 12499 points
+  build=534.8ms  search=2.032ms  missed=1
+  scanned=0.6945  pruned=0.3055
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      3      49      49.0       43.8     0.8932
+      2     196     190.7      178.7     0.9369
+      1     782     764.6      725.8     0.9492
+      0    3125    3060.1     2613.5     0.8534
+
+  Asymptotic model:
+    gate_cost   = 4064.5 dot-equiv
+    scan_cost   = 8680.4 points
+    total / N   = 1.0197
+    speedup     = 0.98x
+
+hier_S4_L5: building 5-level hierarchy with 4 subspaces ...
+  subspace dims=(0, 32): L13 → L49 → L196 → L782 → L3125 → 12499 points
+  build=539.6ms  search=2.449ms  missed=0
+  scanned=0.6943  pruned=0.3057
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      4      13      13.0       11.0     0.8424
+      3      49      47.0       44.5     0.9482
+      2     196     191.5      179.2     0.9362
+      1     782     765.0      726.0     0.9490
+      0    3125    3060.3     2614.9     0.8538
+
+  Asymptotic model:
+    gate_cost   = 4076.8 dot-equiv
+    scan_cost   = 8678.1 points
+    total / N   = 1.0205
+    speedup     = 0.98x
+
+hier_S8_L1: building 1-level hierarchy with 8 subspaces ...
+  subspace dims=(0, 16): L3125 → 12499 points
+  build=805.5ms  search=1.228ms  missed=0
+  scanned=0.3580  pruned=0.6420
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      0    3125    3125.0     2557.8     0.8185
+
+  Asymptotic model:
+    gate_cost   = 3125.0 dot-equiv
+    scan_cost   = 4474.0 points
+    total / N   = 0.6080
+    speedup     = 1.64x
+
+hier_S8_L2: building 2-level hierarchy with 8 subspaces ...
+  subspace dims=(0, 16): L782 → L3125 → 12499 points
+  build=995.3ms  search=2.065ms  missed=0
+  scanned=0.3578  pruned=0.6422
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      1     782     782.0      715.7     0.9152
+      0    3125    3022.6     2558.7     0.8453
+
+  Asymptotic model:
+    gate_cost   = 3804.6 dot-equiv
+    scan_cost   = 4471.8 points
+    total / N   = 0.6622
+    speedup     = 1.51x
+
+hier_S8_L3: building 3-level hierarchy with 8 subspaces ...
+  subspace dims=(0, 16): L196 → L782 → L3125 → 12499 points
+  build=1038.5ms  search=2.978ms  missed=3
+  scanned=0.3574  pruned=0.6426
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      2     196     196.0      182.5     0.9313
+      1     782     767.6      716.8     0.9337
+      0    3125    3024.0     2557.9     0.8447
+
+  Asymptotic model:
+    gate_cost   = 3987.6 dot-equiv
+    scan_cost   = 4467.0 points
+    total / N   = 0.6764
+    speedup     = 1.48x
+
+hier_S8_L4: building 4-level hierarchy with 8 subspaces ...
+  subspace dims=(0, 16): L49 → L196 → L782 → L3125 → 12499 points
+  build=1056.0ms  search=3.908ms  missed=2
+  scanned=0.3576  pruned=0.6424
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      3      49      49.0       45.5     0.9294
+      2     196     192.5      182.8     0.9495
+      1     782     767.9      716.7     0.9332
+      0    3125    3023.4     2556.5     0.8444
+
+  Asymptotic model:
+    gate_cost   = 4032.8 dot-equiv
+    scan_cost   = 4470.2 points
+    total / N   = 0.6803
+    speedup     = 1.47x
+
+hier_S8_L5: building 5-level hierarchy with 8 subspaces ...
+  subspace dims=(0, 16): L13 → L49 → L196 → L782 → L3125 → 12499 points
+  build=1073.1ms  search=4.847ms  missed=0
+  scanned=0.3575  pruned=0.6425
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      4      13      13.0       11.8     0.9086
+      3      49      47.8       45.7     0.9552
+      2     196     192.6      182.2     0.9460
+      1     782     767.2      716.1     0.9332
+      0    3125    3023.2     2557.3     0.8447
+
+  Asymptotic model:
+    gate_cost   = 4043.8 dot-equiv
+    scan_cost   = 4468.7 points
+    total / N   = 0.6811
+    speedup     = 1.47x
+
+hier_S16_L1: building 1-level hierarchy with 16 subspaces ...
+  subspace dims=(0, 8): L3125 → 12499 points
+  build=1618.9ms  search=2.323ms  missed=0
+  scanned=0.0974  pruned=0.9026
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      0    3125    3125.0     2512.4     0.8040
+
+  Asymptotic model:
+    gate_cost   = 3125.0 dot-equiv
+    scan_cost   = 1217.5 points
+    total / N   = 0.3474
+    speedup     = 2.88x
+
+hier_S16_L2: building 2-level hierarchy with 16 subspaces ...
+  subspace dims=(0, 8): L782 → L3125 → 12499 points
+  build=1983.0ms  search=4.100ms  missed=0
+  scanned=0.0975  pruned=0.9025
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      1     782     782.0      693.0     0.8862
+      0    3125    2925.1     2512.7     0.8569
+
+  Asymptotic model:
+    gate_cost   = 3707.1 dot-equiv
+    scan_cost   = 1218.6 points
+    total / N   = 0.3941
+    speedup     = 2.54x
+
+hier_S16_L3: building 3-level hierarchy with 16 subspaces ...
+  subspace dims=(0, 8): L196 → L782 → L3125 → 12499 points
+  build=2085.6ms  search=5.946ms  missed=5
+  scanned=0.0974  pruned=0.9026
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      2     196     196.0      183.3     0.9355
+      1     782     763.2      693.2     0.9078
+      0    3125    2925.8     2512.7     0.8567
+
+  Asymptotic model:
+    gate_cost   = 3885.0 dot-equiv
+    scan_cost   = 1217.2 points
+    total / N   = 0.4082
+    speedup     = 2.45x
+
+hier_S16_L4: building 4-level hierarchy with 16 subspaces ...
+  subspace dims=(0, 8): L49 → L196 → L782 → L3125 → 12499 points
+  build=2112.1ms  search=7.838ms  missed=4
+  scanned=0.0973  pruned=0.9027
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      3      49      49.0       46.6     0.9508
+      2     196     193.4      183.4     0.9482
+      1     782     763.3      693.0     0.9073
+      0    3125    2925.7     2512.4     0.8566
+
+  Asymptotic model:
+    gate_cost   = 3931.4 dot-equiv
+    scan_cost   = 1216.0 points
+    total / N   = 0.4118
+    speedup     = 2.43x
+
+hier_S16_L5: building 5-level hierarchy with 16 subspaces ...
+  subspace dims=(0, 8): L13 → L49 → L196 → L782 → L3125 → 12499 points
+  build=2140.3ms  search=9.616ms  missed=4
+  scanned=0.0975  pruned=0.9025
+
+  LEVEL       K   CHECKED   SURVIVED  PASS_RATE
+  ---------------------------------------------
+      4      13      13.0       12.3     0.9470
+      3      49      48.3       46.8     0.9684
+      2     196     193.6      183.2     0.9464
+      1     782     763.2      693.2     0.9078
+      0    3125    2925.6     2512.5     0.8567
+
+  Asymptotic model:
+    gate_cost   = 3943.6 dot-equiv
+    scan_cost   = 1218.9 points
+    total / N   = 0.4130
+    speedup     = 2.42x
+
+==============================================================================================================
+METHOD                 S   L  SCANNED   PRUNED     GATE     SCAN   RATIO  SPEEDUP  SEARCH_ms  BUILD_ms  MISSED
+--------------------------------------------------------------------------------------------------------------
+hier_S16_L1           16   1   0.0974   0.9026   3125.0   1217.5  0.3474    2.88x      2.323    1618.9       0
+hier_S16_L2           16   2   0.0975   0.9025   3707.1   1218.6  0.3941    2.54x      4.100    1983.0       0
+hier_S16_L3           16   3   0.0974   0.9026   3885.0   1217.2  0.4082    2.45x      5.946    2085.6       5
+hier_S16_L4           16   4   0.0973   0.9027   3931.4   1216.0  0.4118    2.43x      7.838    2112.1       4
+hier_S16_L5           16   5   0.0975   0.9025   3943.6   1218.9  0.4130    2.42x      9.616    2140.3       4
+hier_S8_L1             8   1   0.3580   0.6420   3125.0   4474.0  0.6080    1.64x      1.228     805.5       0
+hier_S8_L2             8   2   0.3578   0.6422   3804.6   4471.8  0.6622    1.51x      2.065     995.3       0
+hier_S8_L3             8   3   0.3574   0.6426   3987.6   4467.0  0.6764    1.48x      2.978    1038.5       3
+hier_S8_L4             8   4   0.3576   0.6424   4032.8   4470.2  0.6803    1.47x      3.908    1056.0       2
+hier_S8_L5             8   5   0.3575   0.6425   4043.8   4468.7  0.6811    1.47x      4.847    1073.1       0
+hier_S4_L1             4   1   0.6939   0.3061   3125.0   8673.3  0.9439    1.06x      1.578     605.9       0
+hier_S4_L2             4   2   0.6927   0.3073   3840.6   8658.6  1.0000    1.00x      1.067     496.1       0
+hier_S4_L3             4   3   0.6934   0.3066   4020.3   8666.7  1.0150    0.99x      1.510     517.8       0
+hier_S4_L4             4   4   0.6945   0.3055   4064.5   8680.4  1.0197    0.98x      2.032     534.8       1
+hier_S4_L5             4   5   0.6943   0.3057   4076.8   8678.1  1.0205    0.98x      2.449     539.6       0
+==============================================================================================================
+
+Best asymptotic speedup: hier_S16_L1 → ratio=0.3474 (2.88x), scanned=0.0974

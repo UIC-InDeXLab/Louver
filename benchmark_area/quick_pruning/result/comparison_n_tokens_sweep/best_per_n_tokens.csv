@@ -1,0 +1,2 @@
+n_tokens,prompt_len,total_keys,layer,bf,topk,n_queries,clustering,enclosing,scanned_frac,pruned_frac,search_ms,build_ms,clust_ms,enc_ms,gate_cost_dp,ratio,speedup,enc_vol_mean,enc_vol_max
+6000,461,6461,15,4,20,30,kcenter,aabb,0.6503392120202383,0.34966078797976174,0.06623752415180206,167.81214624643326,158.10514986515045,9.706996381282806,2.0,1.1503392120202383,0.8693088000049908,inf,inf

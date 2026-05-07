@@ -78,14 +78,16 @@ class CUDASearcher(BaseSearcher):
             query:     ``(1, H, 1, D)`` query tensor.
             threshold: ``(H,)`` per-head threshold tensor.
             scaling:   Optional ``(H,)`` per-head scaling tensor for returned scores.
-            indexer:   Built :class:`CPUIndexer` (all tensors ``(H, …)``).
+        Returns:
+            ``(H_q, N)`` float tensor -- dot-product scores for qualifying
+            keys, ``output_fill_value`` for pruned / below-threshold keys.
         """
         if indexer.children is None:
             raise ValueError("Indexer is not built: missing children tensor.")
         num_kv_heads = int(indexer.children.shape[0])
         num_keys = int(indexer.children.shape[1])
 
-        query = query.squeeze(0).squeeze(-2).contiguous()
+        # query = query.squeeze(0).squeeze(-2).contiguous()
         num_query_heads = int(query.shape[0])
 
         assert threshold.shape == (
@@ -157,37 +159,34 @@ class CUDASearcher(BaseSearcher):
         - scanned_fraction_per_head: (H_q,) tensor in [0, 1]
         - scanned_children_per_head: (H_q,) tensor (counts)
         - total_children: int
+        - scanned_children_total: int -- sum of scanned children across all query heads
         - scanned_fraction_mean: float
+        - output_size_per_head: (H_q,) tensor -- children with dot(q, child) > threshold
+        - output_size_total: int -- sum of output_size_per_head across all query heads
         """
         if indexer.children is None:
             raise ValueError("Indexer is not built: missing children tensor.")
-        if indexer.parents is None or indexer.parent_radii is None:
-            raise ValueError(
-                "Indexer is not built: missing parents/parent_radii tensors."
-            )
-
-        device = indexer.children.device
         num_kv_heads = int(indexer.children.shape[0])
-        dim = int(indexer.children.shape[2])
+        num_keys = int(indexer.children.shape[1])
 
-        q = self._flatten_query(query=query, dim=dim, device=device)
-        num_query_heads = int(q.shape[0])
-        scaling = self._coerce_scaling(
-            scaling,
-            num_query_heads=num_query_heads,
-            device=device,
-        )
-        q_head_to_kv = self._resolve_q_head_to_kv(
-            num_query_heads=num_query_heads,
-            num_kv_heads=num_kv_heads,
-            device=device,
-            q_head_to_kv=q_head_to_kv,
-        )
-        t = self._coerce_threshold(
-            threshold=threshold,
-            num_query_heads=num_query_heads,
-            device=device,
-        )
+        # query = query.squeeze(0).squeeze(-2).contiguous()
+        num_query_heads = int(query.shape[0])
+
+        assert threshold.shape == (
+            query.shape[0],
+        ), "threshold shape must match number of heads in query"
+
+        if scaling is None:
+            scaling = torch.ones(
+                (query.shape[0],), device=query.device, dtype=torch.float32
+            )
+        assert scaling.shape == threshold.shape
+
+        if q_head_to_kv is None:
+            q_head_to_kv = self._resolve_q_head_to_kv(
+                num_query_heads=num_query_heads,
+                num_kv_heads=num_kv_heads,
+            )
 
         depth_value = getattr(indexer.depth, "value", indexer.depth)
         bf = int(indexer.branching_factor)
@@ -197,8 +196,8 @@ class CUDASearcher(BaseSearcher):
 
         if depth_value == CUDAIndexer.DEPTH.TWO_LEVELS.value:
             # Parent gate: (q·p + r) > t
-            parent_scores = torch.einsum("hmd,hd->hm", parents, q)
-            parent_pass = (parent_scores + parent_radii) > t.unsqueeze(-1)
+            parent_scores = torch.einsum("hmd,hd->hm", parents, query)
+            parent_pass = (parent_scores + parent_radii) > threshold.unsqueeze(-1)
             scanned_children_per_head = parent_pass.sum(dim=1).to(torch.int64) * bf
         elif depth_value == CUDAIndexer.DEPTH.THREE_LEVELS.value:
             if indexer.grand_parents is None or indexer.grand_parent_radii is None:
@@ -210,8 +209,8 @@ class CUDASearcher(BaseSearcher):
                 0, q_head_to_kv
             )
             # Grandparent gate (P2 -> P1 mask pass)
-            gp_scores = torch.einsum("hgd,hd->hg", grand_parents, q)
-            gp_pass = (gp_scores + grand_parent_radii) > t.unsqueeze(-1)
+            gp_scores = torch.einsum("hgd,hd->hg", grand_parents, query)
+            gp_pass = (gp_scores + grand_parent_radii) > threshold.unsqueeze(-1)
 
             # Expand gp mask to level-1 parents exactly as branch-grouped layout.
             gp_mask_on_p1 = (
@@ -219,8 +218,10 @@ class CUDASearcher(BaseSearcher):
             )
 
             # Parent gate (P1 -> K), masked by grandparent pass.
-            p1_scores = torch.einsum("hmd,hd->hm", parents, q)
-            p1_pass = gp_mask_on_p1 & ((p1_scores + parent_radii) > t.unsqueeze(-1))
+            p1_scores = torch.einsum("hmd,hd->hm", parents, query)
+            p1_pass = gp_mask_on_p1 & (
+                (p1_scores + parent_radii) > threshold.unsqueeze(-1)
+            )
             scanned_children_per_head = p1_pass.sum(dim=1).to(torch.int64) * bf
         else:
             raise ValueError(f"Unsupported index depth: {indexer.depth}")
@@ -231,9 +232,20 @@ class CUDASearcher(BaseSearcher):
             denom
         )
 
+        scanned_children_total = int(scanned_children_per_head.sum().item())
+
+        # Output size: children whose dot product with the query exceeds the threshold.
+        children = indexer.children.index_select(0, q_head_to_kv)  # (H_q, N, D)
+        child_scores = torch.einsum("hnd,hd->hn", children, query)  # (H_q, N)
+        output_size_per_head = (child_scores > threshold.unsqueeze(-1)).sum(
+            dim=1
+        )  # (H_q,)
+        output_size_mean = float(output_size_per_head.float().mean().item())
+
         return {
             "scanned_fraction_per_head": scanned_fraction_per_head,
             "scanned_children_per_head": scanned_children_per_head,
             "total_children": total_children,
             "scanned_fraction_mean": float(scanned_fraction_per_head.mean().item()),
+            "output_size_mean": output_size_mean,
         }

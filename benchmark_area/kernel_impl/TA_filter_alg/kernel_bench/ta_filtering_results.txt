@@ -1,0 +1,89 @@
+=$(basename "$f" .pt);         echo "=== $name ===";         ~/venv/bin/python /home/mohsen/kvcache/hira/benchmark_area/kernel_impl/TA_filter_alg/kernel_bench/bench_ta_filtering.py --input "$f" 2>&1 | grep -E "(N=|v(7\.10|7\.11|8\.0|6\.[12]|3\.4))" | head -10;       done
+=== capture_qkv_12000_meta-llama_Llama-3.2-3B-Instruct ===
+Hq=24 Hkv=8 N=12461 D=128 queries=64 topk=20
+ta_filter_v3.4    0.029243 ms/query  keep=0.1009  ref_match=0.9998
+ta_filter_v6.1    0.031063 ms/query  keep=0.1009  ref_match=0.9998
+ta_filter_v6.2    0.031068 ms/query  keep=0.1009  ref_match=0.9998
+ta_filter_v7.10   0.022550 ms/query  keep=0.0892  ref_match=0.9781
+ta_filter_v7.11   0.022887 ms/query  keep=0.0892  ref_match=0.9781
+ta_filter_v8.0    0.022547 ms/query  keep=0.0892  ref_match=0.9781
+best=ta_filter_v8.0 (0.022547 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.771x
+ta_filter_v6.1   speedup_vs_best=0.726x
+=== capture_qkv_12000_Qwen_Qwen2.5-7B-Instruct ===
+Hq=28 Hkv=4 N=12499 D=128 queries=64 topk=20
+ta_filter_v3.4    0.030160 ms/query  keep=0.1156  ref_match=0.9999
+ta_filter_v6.1    0.031076 ms/query  keep=0.1156  ref_match=0.9999
+ta_filter_v6.2    0.031153 ms/query  keep=0.1156  ref_match=0.9999
+ta_filter_v7.10   0.028819 ms/query  keep=0.0994  ref_match=0.9817
+ta_filter_v7.11   0.024571 ms/query  keep=0.0994  ref_match=0.9817
+ta_filter_v8.0    0.024572 ms/query  keep=0.0994  ref_match=0.9817
+best=ta_filter_v7.11 (0.024571 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.815x
+ta_filter_v6.1   speedup_vs_best=0.791x
+=== capture_qkv_20000_meta-llama_Llama-3.2-3B-Instruct ===
+Hq=24 Hkv=8 N=20461 D=128 queries=64 topk=20
+ta_filter_v3.4    0.038841 ms/query  keep=0.0797  ref_match=0.9999
+ta_filter_v6.1    0.039198 ms/query  keep=0.0797  ref_match=0.9999
+ta_filter_v6.2    0.039390 ms/query  keep=0.0797  ref_match=0.9999
+ta_filter_v7.10   0.039920 ms/query  keep=0.0659  ref_match=0.9733
+ta_filter_v7.11   0.030712 ms/query  keep=0.0659  ref_match=0.9733
+ta_filter_v8.0    0.030712 ms/query  keep=0.0659  ref_match=0.9733
+best=ta_filter_v7.11 (0.030712 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.791x
+ta_filter_v6.1   speedup_vs_best=0.784x
+=== capture_qkv_20000_Qwen_Qwen2.5-7B-Instruct ===
+Hq=28 Hkv=4 N=20499 D=128 queries=64 topk=20
+ta_filter_v3.4    0.039273 ms/query  keep=0.0973  ref_match=0.9999
+ta_filter_v6.1    0.039321 ms/query  keep=0.0973  ref_match=0.9999
+ta_filter_v6.2    0.039516 ms/query  keep=0.0973  ref_match=0.9999
+ta_filter_v7.10   0.042033 ms/query  keep=0.0775  ref_match=0.9848
+ta_filter_v7.11   0.030743 ms/query  keep=0.0775  ref_match=0.9848
+ta_filter_v8.0    0.030740 ms/query  keep=0.0775  ref_match=0.9848
+best=ta_filter_v8.0 (0.030740 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.783x
+ta_filter_v6.1   speedup_vs_best=0.782x
+=== capture_qkv_4000_meta-llama_Llama-3.2-3B-Instruct ===
+Hq=24 Hkv=8 N=4461 D=128 queries=64 topk=20
+ta_filter_v3.4    0.016889 ms/query  keep=0.1033  ref_match=0.9998
+ta_filter_v6.1    0.018812 ms/query  keep=0.1033  ref_match=0.9998
+ta_filter_v6.2    0.018797 ms/query  keep=0.1033  ref_match=0.9998
+ta_filter_v7.10   0.016360 ms/query  keep=0.1005  ref_match=0.9931
+ta_filter_v7.11   0.016890 ms/query  keep=0.1005  ref_match=0.9931
+ta_filter_v8.0    0.016363 ms/query  keep=0.1005  ref_match=0.9931
+best=ta_filter_v7.10 (0.016360 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.969x
+ta_filter_v6.1   speedup_vs_best=0.870x
+=== capture_qkv_4000_Qwen_Qwen2.5-7B-Instruct ===
+Hq=28 Hkv=4 N=4499 D=128 queries=64 topk=20
+ta_filter_v3.4    0.017099 ms/query  keep=0.1359  ref_match=0.9995
+ta_filter_v6.1    0.019149 ms/query  keep=0.1359  ref_match=0.9995
+ta_filter_v6.2    0.018925 ms/query  keep=0.1359  ref_match=0.9995
+ta_filter_v7.10   0.016382 ms/query  keep=0.1319  ref_match=0.9884
+ta_filter_v7.11   0.018250 ms/query  keep=0.1319  ref_match=0.9884
+ta_filter_v8.0    0.016383 ms/query  keep=0.1319  ref_match=0.9884
+best=ta_filter_v7.10 (0.016382 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.958x
+ta_filter_v6.1   speedup_vs_best=0.856x
+=== capture_qkv_8000_meta-llama_Llama-3.2-3B-Instruct ===
+Hq=24 Hkv=8 N=8461 D=128 queries=64 topk=20
+ta_filter_v3.4    0.020884 ms/query  keep=0.0800  ref_match=0.9995
+ta_filter_v6.1    0.022879 ms/query  keep=0.0800  ref_match=0.9995
+ta_filter_v6.2    0.022868 ms/query  keep=0.0800  ref_match=0.9995
+ta_filter_v7.10   0.018647 ms/query  keep=0.0758  ref_match=0.9915
+ta_filter_v7.11   0.020498 ms/query  keep=0.0758  ref_match=0.9915
+ta_filter_v8.0    0.018656 ms/query  keep=0.0758  ref_match=0.9915
+best=ta_filter_v7.10 (0.018647 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.893x
+ta_filter_v6.1   speedup_vs_best=0.815x
+=== capture_qkv_8000_Qwen_Qwen2.5-7B-Instruct ===
+Hq=28 Hkv=4 N=8499 D=128 queries=64 topk=20
+ta_filter_v3.4    0.021209 ms/query  keep=0.1195  ref_match=0.9986
+ta_filter_v6.1    0.022980 ms/query  keep=0.1195  ref_match=0.9986
+ta_filter_v6.2    0.022859 ms/query  keep=0.1195  ref_match=0.9986
+ta_filter_v7.10   0.020440 ms/query  keep=0.1094  ref_match=0.9836
+ta_filter_v7.11   0.020499 ms/query  keep=0.1094  ref_match=0.9836
+ta_filter_v8.0    0.020446 ms/query  keep=0.1094  ref_match=0.9836
+best=ta_filter_v7.10 (0.020440 ms/query)
+ta_filter_v3.4   speedup_vs_best=0.964x
+ta_filter_v6.1   speedup_vs_best=0.889x

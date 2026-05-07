@@ -30,17 +30,17 @@ pytestmark = pytest.mark.skipif(
 
 
 def _make_keys(num_heads: int, seq_len: int, dim: int, seed: int = 0) -> torch.Tensor:
-    """Return L2-normalised keys of shape (1, H, L, D) on CPU."""
+    """Return L2-normalised keys of shape (H, L, D) on CPU."""
     torch.manual_seed(seed)
-    keys = torch.randn(1, num_heads, seq_len, dim)
+    keys = torch.randn(num_heads, seq_len, dim)
     keys = F.normalize(keys, dim=-1)
     return keys.float()
 
 
 def _make_query(num_heads: int, dim: int, seed: int = 42) -> torch.Tensor:
-    """Return a single L2-normalised query of shape (1, H, 1, D) on CPU."""
+    """Return a single L2-normalised query of shape (H, D) on CPU."""
     torch.manual_seed(seed)
-    q = torch.randn(1, num_heads, 1, dim)
+    q = torch.randn(num_heads, dim)
     q = F.normalize(q, dim=-1)
     return q.float()
 
@@ -49,13 +49,13 @@ def _exact_scores(query: torch.Tensor, keys: torch.Tensor) -> torch.Tensor:
     """Brute-force dot-product scores.
 
     Args:
-        query: (1, H, 1, D) – on any device
-        keys:  (H, N, D)    – on CUDA (indexer.children)
+        query: (H, D) – on any device
+        keys:  (H, N, D) – on CUDA (indexer.children)
 
     Returns:
         (H, N) float scores on CPU.
     """
-    q = query.squeeze(0).squeeze(-2).to(keys.device).float()  # (H, D) on CUDA
+    q = query.to(keys.device).float()  # (H, D) on CUDA
     scores = torch.einsum("hd,hnd->hn", q, keys.float())      # (H, N) on CUDA
     return scores.cpu()
 
@@ -110,7 +110,7 @@ def _build_indexer(
     branching_factor: int = 8,
     max_iterations: int = 3,
 ) -> CUDAIndexer:
-    """Build and return a CUDAIndexer from keys (1, H, L, D) on CPU."""
+    """Build and return a CUDAIndexer from keys (H, L, D) on CPU."""
     return CUDAIndexer(
         num_levels=num_levels,
         branching_factor=branching_factor,
@@ -178,14 +178,14 @@ class TestFullRecallIncrementalUpdate:
         all_keys = _make_keys(self.NUM_HEADS, total_len, self.DIM, seed=2)
 
         # Build initial index on the first slice
-        initial_keys = all_keys[:, :, : self.INITIAL_LEN, :]
+        initial_keys = all_keys[:, : self.INITIAL_LEN, :]
         indexer = _build_indexer(initial_keys, num_levels=3, branching_factor=8)
 
         # Incrementally update
         for i in range(self.NUM_CHUNKS):
             start = self.INITIAL_LEN + i * self.CHUNK_LEN
             end = start + self.CHUNK_LEN
-            chunk = all_keys[:, :, start:end, :].cuda()
+            chunk = all_keys[:, start:end, :].cuda()
             indexer.update(chunk)
 
         query = _make_query(self.NUM_HEADS, self.DIM, seed=20)
@@ -425,23 +425,23 @@ class TestKeyValueOrdering:
         the original key at that index after the index is built."""
         keys = _make_keys(self.NUM_HEADS, self.SEQ_LEN, self.DIM, seed=5)
 
-        # Construct values where values[0, h, i, 0] = i (original position).
-        values = torch.zeros(1, self.NUM_HEADS, self.SEQ_LEN, self.DIM)
+        # Construct values where values[h, i, 0] = i (original position).
+        values = torch.zeros(self.NUM_HEADS, self.SEQ_LEN, self.DIM)
         for i in range(self.SEQ_LEN):
-            values[0, :, i, 0] = float(i)
+            values[:, i, 0] = float(i)
 
         indexer = self._build_with_values(keys, values)
 
         stored_keys = indexer.children          # (H, N, D) on CUDA
-        stored_values = indexer.values          # (1, H, N, D) on CUDA
+        stored_values = indexer.values          # (H, N, D) on CUDA
 
         assert stored_keys is not None
         assert stored_values is not None
 
         # Work on CPU for element-wise checks
         sk = stored_keys.cpu()       # (H, N, D)
-        sv = stored_values.cpu()     # (1, H, N, D)
-        orig_keys = keys.squeeze(0)  # (H, L, D)
+        sv = stored_values.cpu()     # (H, N, D)
+        orig_keys = keys             # (H, L, D)
 
         H, N, D = sk.shape
         pad = 0.0
@@ -452,7 +452,7 @@ class TestKeyValueOrdering:
                 if torch.all(sk[h, i] == pad):
                     continue
                 # The value's first channel encodes the original index
-                stored_val_idx = sv[0, h, i, 0].long().item()
+                stored_val_idx = sv[h, i, 0].long().item()
                 if not (0 <= stored_val_idx < self.SEQ_LEN):
                     # Padded value slot; skip
                     continue
@@ -471,18 +471,18 @@ class TestKeyValueOrdering:
         # values[0, h, i, :] = keys[0, h, i, :] * (i + 1)
         values = keys.clone()
         for i in range(self.SEQ_LEN):
-            values[0, :, i, :] = keys[0, :, i, :] * (i + 1)
+            values[:, i, :] = keys[:, i, :] * (i + 1)
 
         # Apply the same random permutation to both keys and values
         torch.manual_seed(99)
         perm = torch.randperm(self.SEQ_LEN)
-        shuffled_keys = keys[:, :, perm, :]
-        shuffled_values = values[:, :, perm, :]
+        shuffled_keys = keys[:, perm, :]
+        shuffled_values = values[:, perm, :]
 
         indexer = self._build_with_values(shuffled_keys, shuffled_values)
 
         stored_keys = indexer.children.cpu()       # (H, N, D)
-        stored_values = indexer.values.cpu()       # (1, H, N, D)
+        stored_values = indexer.values.cpu()       # (H, N, D)
 
         assert stored_keys is not None
         assert stored_values is not None
@@ -492,7 +492,7 @@ class TestKeyValueOrdering:
 
         for h in range(H):
             k = stored_keys[h]           # (N, D)
-            v = stored_values[0, h]      # (N, D)
+            v = stored_values[h]         # (N, D)
             for i in range(N):
                 # Skip padded slots
                 if torch.all(k[i] == pad):

@@ -67,9 +67,9 @@ def _grouped_bruteforce_scores(
 
 
 def _query_layout(query_1h1d: torch.Tensor, layout: str) -> torch.Tensor:
-    if layout == "4d":
-        return query_1h1d
-    if layout == "2d":
+    """Return query as (H, D) — both layouts now collapse to 2-D for the
+    current CUDA searcher API."""
+    if layout in ("4d", "2d"):
         return query_1h1d.squeeze(0).squeeze(-2).contiguous()
     raise ValueError(f"Unsupported query layout: {layout}")
 
@@ -237,7 +237,7 @@ def test_cuda_indexer_build_update_search_recall(
 
     all_keys = _normalized_positive_keys(h_kv, total, d, seed=seed, device="cuda")
     base_keys = all_keys[:, :, :n0, :].contiguous()
-    new_keys = all_keys[:, :, n0:, :].contiguous()
+    new_keys = all_keys[:, :, n0:, :].squeeze(0).contiguous()  # (H, M, D)
 
     indexer = CUDAIndexer(
         num_levels=CUDAIndexer.DEPTH.TWO_LEVELS,
@@ -304,6 +304,7 @@ def test_cuda_searcher_scaling_outputs():
 
     keys = _normalized_positive_keys(h, n, d, seed=601, device="cuda")
     query = _normalized_positive_query(h, d, seed=602, device="cuda")
+    query_2d = query.squeeze(0).squeeze(-2).contiguous()  # (H, D)
 
     indexer = CUDAIndexer(
         num_levels=CUDAIndexer.DEPTH.TWO_LEVELS,
@@ -318,12 +319,12 @@ def test_cuda_searcher_scaling_outputs():
 
     searcher = CUDASearcher(block_c=_choose_block_c(bf), output_fill_value=0.0)
     baseline = searcher.search(
-        query,
+        query_2d,
         threshold,
         indexer,
         scaling=torch.ones((h,), device="cuda", dtype=torch.float32),
     ).clone()
-    scaled = searcher.search(query, threshold, indexer, scaling=scaling)
+    scaled = searcher.search(query_2d, threshold, indexer, scaling=scaling)
 
     assert torch.equal(scaled != 0, baseline != 0)
     torch.testing.assert_close(
@@ -347,8 +348,8 @@ def test_cuda_indexer_reorders_values():
 
     base_keys = all_keys[:, :, :n0, :].contiguous()
     base_values = all_values[:, :, :n0, :].contiguous()
-    new_keys = all_keys[:, :, n0:, :].contiguous()
-    new_values = all_values[:, :, n0:, :].contiguous()
+    new_keys = all_keys[:, :, n0:, :].squeeze(0).contiguous()   # (H, M, D)
+    new_values = all_values[:, :, n0:, :].squeeze(0).contiguous()  # (H, M, D)
 
     indexer = CUDAIndexer(
         num_levels=CUDAIndexer.DEPTH.TWO_LEVELS,
@@ -361,9 +362,10 @@ def test_cuda_indexer_reorders_values():
     assert indexer.children is not None
     assert indexer.values is not None
 
-    expected_values = indexer.children.unsqueeze(0) * 3.0 - 0.7
+    # values & children are both (H, N, D)
+    expected_values = indexer.children * 3.0 - 0.7
     valid_rows = ~torch.all(indexer.children == indexer.pad_value, dim=-1)
-    valid_mask = valid_rows.unsqueeze(0).unsqueeze(-1).expand_as(indexer.values)
+    valid_mask = valid_rows.unsqueeze(-1).expand_as(indexer.values)
 
     torch.testing.assert_close(
         indexer.values[valid_mask], expected_values[valid_mask], atol=1e-6, rtol=0.0

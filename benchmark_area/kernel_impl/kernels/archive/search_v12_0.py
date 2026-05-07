@@ -1,0 +1,386 @@
+"""search_v12.0 — autotuned batched-parent search with sparse writes.
+
+Compared with v11:
+  1. Triton autotunes parents-per-program / warps / stages.
+  2. Output is prefilled to -inf once per launch; kernel writes only survivors.
+  3. Parent-major assign layout improves non-anchor metadata locality.
+"""
+
+from __future__ import annotations
+
+import torch
+
+try:
+    import triton
+    import triton.language as tl
+
+    HAS_TRITON = True
+except Exception:  # pragma: no cover
+    HAS_TRITON = False
+
+from ._search_triton import triton_fused_cluster_pass
+from ._search_utils import _mapping_mode, buffer_dot, pack_query_subspaces
+
+KERNEL_VERSION = "v12.0"
+
+
+def _next_pow2(x: int) -> int:
+    p = 1
+    while p < x:
+        p *= 2
+    return p
+
+
+def _assign_dtype(k: int) -> torch.dtype:
+    return torch.int16 if k < 32768 else torch.int32
+
+
+def _pack_parent_major_assigns(
+    assigns_reord: list[torch.Tensor],
+    h_kv: int,
+    k: int,
+    bf: int,
+) -> torch.Tensor:
+    s = len(assigns_reord)
+    return (
+        torch.stack(assigns_reord, dim=0)
+        .to(_assign_dtype(k))
+        .view(s, h_kv, k, bf)
+        .permute(1, 2, 0, 3)
+        .contiguous()
+    )
+
+
+def _get_or_make_parent_major_pack(
+    state: dict,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if (
+        "keys_blocks_t" in state
+        and "assigns_parent_major" in state
+        and "invalid_blocks_i8" in state
+    ):
+        return (
+            state["keys_blocks_t"],
+            state["assigns_parent_major"],
+            state["invalid_blocks_i8"],
+        )
+
+    keys_reord = state["keys_reord"]
+    cache = state.setdefault("_search_v12_0_parent_major_pack", {})
+    cache_key = (
+        keys_reord.data_ptr(),
+        tuple(keys_reord.shape),
+        state["K"],
+        state["bf"],
+        len(state["assigns_reord"]),
+    )
+    if cache.get("key") == cache_key:
+        pack = cache["pack"]
+        return (
+            pack["keys_blocks_t"],
+            pack["assigns_parent_major"],
+            pack["invalid_blocks_i8"],
+        )
+
+    h_kv, _, d = keys_reord.shape
+    k = state["K"]
+    bf = state["bf"]
+    pack = {
+        "keys_blocks_t": (
+            keys_reord.view(h_kv, k, bf, d).permute(0, 1, 3, 2).contiguous()
+        ),
+        "assigns_parent_major": _pack_parent_major_assigns(
+            state["assigns_reord"], h_kv, k, bf
+        ),
+        "invalid_blocks_i8": (
+            state["invalid_mask"].view(h_kv, k, bf).to(torch.int8).contiguous()
+        ),
+    }
+    cache["key"] = cache_key
+    cache["pack"] = pack
+    return (
+        pack["keys_blocks_t"],
+        pack["assigns_parent_major"],
+        pack["invalid_blocks_i8"],
+    )
+
+
+if HAS_TRITON:
+
+    def _prefill_out_hook(kwargs, reset_only=False):
+        del reset_only
+        kwargs["Out_ptr"].fill_(float("-inf"))
+
+
+    _AUTOTUNE_CONFIGS = [
+        triton.Config({"PARENTS_PER_PROG": 4}, num_warps=2, num_stages=2),
+        triton.Config({"PARENTS_PER_PROG": 4}, num_warps=4, num_stages=2),
+        triton.Config({"PARENTS_PER_PROG": 8}, num_warps=4, num_stages=2),
+        triton.Config({"PARENTS_PER_PROG": 8}, num_warps=4, num_stages=4),
+        triton.Config({"PARENTS_PER_PROG": 16}, num_warps=4, num_stages=2),
+        triton.Config({"PARENTS_PER_PROG": 16}, num_warps=8, num_stages=2),
+    ]
+
+    @triton.autotune(
+        configs=_AUTOTUNE_CONFIGS,
+        key=["K", "H_Q"],
+        pre_hook=_prefill_out_hook,
+    )
+    @triton.jit
+    def _fused_anchor_parent_batch_sparse_kernel(
+        Q_ptr,                 # (H_q, D)
+        KeysBlocksT_ptr,       # (H_kv, K, D, BF)
+        AssignsParent_ptr,     # (H_kv, K, S, BF)
+        ClusterPass_ptr,       # (S, H_q, K) int8
+        InvalidBlocks_ptr,     # (H_kv, K, BF) int8
+        Out_ptr,               # (H_q, N_pad) f32
+        H_Q,
+        H_KV,
+        K,
+        N_PAD,
+        ANCHOR_S: tl.constexpr,
+        D: tl.constexpr,
+        BF: tl.constexpr,
+        GROUPS: tl.constexpr,
+        GROUPS_POW: tl.constexpr,
+        S: tl.constexpr,
+        PARENTS_PER_PROG: tl.constexpr,
+    ):
+        kvh = tl.program_id(0)
+        parent_block = tl.program_id(1)
+
+        g_range = tl.arange(0, GROUPS_POW)
+        g_valid = g_range < GROUPS
+        hq_vec = kvh * GROUPS + g_range
+
+        cols = tl.arange(0, PARENTS_PER_PROG * BF)
+        parent_rel = cols // BF
+        child_rel = cols % BF
+
+        parent_idx = parent_block * PARENTS_PER_PROG + parent_rel
+        col_valid = parent_idx < K
+        parent_idx_safe = tl.where(col_valid, parent_idx, 0)
+        child_idx = parent_idx_safe * BF + child_rel
+
+        out_offs = hq_vec[:, None] * N_PAD + child_idx[None, :]
+        out_mask = g_valid[:, None] & col_valid[None, :]
+
+        anchor_pass = tl.load(
+            ClusterPass_ptr
+            + (ANCHOR_S * H_Q + hq_vec[:, None]) * K
+            + parent_idx_safe[None, :],
+            mask=out_mask,
+            other=0,
+        )
+        survive = (anchor_pass != 0) & out_mask
+
+        inv = tl.load(
+            InvalidBlocks_ptr + ((kvh * K + parent_idx_safe) * BF + child_rel),
+            mask=col_valid,
+            other=1,
+        )
+        survive = survive & (inv[None, :] == 0)
+
+        for s in tl.static_range(0, S):
+            if s != ANCHOR_S:
+                assign = tl.load(
+                    AssignsParent_ptr
+                    + (((kvh * K + parent_idx_safe) * S + s) * BF + child_rel),
+                    mask=col_valid,
+                    other=0,
+                ).to(tl.int32)
+                passed = tl.load(
+                    ClusterPass_ptr
+                    + (s * H_Q + hq_vec[:, None]) * K
+                    + assign[None, :],
+                    mask=survive,
+                    other=0,
+                )
+                survive = survive & (passed != 0)
+
+        live_cols = tl.max(survive.to(tl.int32), axis=0) != 0
+        if tl.max(live_cols.to(tl.int32), axis=0) == 0:
+            return
+
+        d_range = tl.arange(0, D)
+        q_full = tl.load(
+            Q_ptr + hq_vec[:, None] * D + d_range[None, :],
+            mask=g_valid[:, None],
+            other=0.0,
+        )
+        keys_tile = tl.load(
+            KeysBlocksT_ptr
+            + ((kvh * K + parent_idx_safe[None, :]) * D + d_range[:, None]) * BF
+            + child_rel[None, :],
+            mask=live_cols[None, :],
+            other=0.0,
+        )
+        acc = tl.dot(q_full, keys_tile, allow_tf32=True)
+        tl.store(Out_ptr + out_offs, acc, mask=survive)
+
+
+def _get_layout_v12(state: dict, q_head_to_kv: torch.Tensor | None, q: torch.Tensor):
+    keys_reord: torch.Tensor = state["keys_reord"]
+    h_kv = keys_reord.shape[0]
+    h_q = int(q.shape[0]) if q_head_to_kv is None else int(q_head_to_kv.shape[0])
+    mode, groups, mapping_sig = _mapping_mode(q_head_to_kv, h_q, h_kv)
+
+    (
+        keys_blocks_src,
+        assigns_parent_src,
+        invalid_blocks_src,
+    ) = _get_or_make_parent_major_pack(state)
+
+    cache = state.setdefault("_search_v12_0_cache", {})
+    cache_key = (
+        mode,
+        groups,
+        mapping_sig,
+        keys_reord.data_ptr(),
+        tuple(keys_reord.shape),
+        keys_blocks_src.data_ptr(),
+        tuple(keys_blocks_src.shape),
+        assigns_parent_src.data_ptr(),
+        tuple(assigns_parent_src.shape),
+    )
+    if cache.get("key") == cache_key:
+        return cache["layout"]
+
+    dim_slices = state["dim_slices"]
+    widths = [end - start for start, end in dim_slices]
+    max_d = max(widths)
+    s = len(dim_slices)
+    k = state["K"]
+    bf = state["bf"]
+    n_pad = state["N_pad"]
+
+    centers_src = state["centers"]
+    radii_src = state["radii"]
+
+    if mode == "expanded":
+        assert q_head_to_kv is not None
+        centers_src = [t.index_select(0, q_head_to_kv).contiguous() for t in centers_src]
+        radii_src = [t.index_select(0, q_head_to_kv).contiguous() for t in radii_src]
+        keys_blocks_base = keys_blocks_src.index_select(0, q_head_to_kv).contiguous()
+        assigns_parent_base = assigns_parent_src.index_select(0, q_head_to_kv).contiguous()
+        invalid_blocks_base = invalid_blocks_src.index_select(0, q_head_to_kv).contiguous()
+        h_kv_eff = h_q
+    else:
+        keys_blocks_base = keys_blocks_src
+        assigns_parent_base = assigns_parent_src
+        invalid_blocks_base = invalid_blocks_src
+        h_kv_eff = h_kv
+
+    centers = torch.zeros(
+        s,
+        h_kv_eff,
+        k,
+        max_d,
+        device=keys_blocks_base.device,
+        dtype=centers_src[0].dtype,
+    )
+    for idx, center_s in enumerate(centers_src):
+        centers[idx, :, :, : center_s.shape[-1]] = center_s
+
+    layout = {
+        "mode": mode,
+        "groups": groups,
+        "base_heads": h_kv_eff,
+        "num_subspaces": s,
+        "max_d": max_d,
+        "dim_slices": tuple(dim_slices),
+        "centers": centers.contiguous(),
+        "radii": torch.stack(radii_src, dim=0).contiguous(),
+        "keys_blocks_t": keys_blocks_base,
+        "assigns_parent_major": assigns_parent_base,
+        "invalid_blocks_i8": invalid_blocks_base,
+        "K": k,
+        "bf": bf,
+        "N_pad": n_pad,
+        "anchor_subspace": state.get("anchor_subspace", 0),
+    }
+    cache["key"] = cache_key
+    cache["layout"] = layout
+    return layout
+
+
+def search(
+    q: torch.Tensor,
+    th_per_subspace: torch.Tensor,
+    state: dict,
+    buffer_keys: torch.Tensor | None,
+    keys_children: torch.Tensor,  # ignored — keys come from build state
+    q_head_to_kv: torch.Tensor | None = None,
+) -> torch.Tensor:
+    if not HAS_TRITON:
+        raise RuntimeError("search_v12 requires Triton")
+    if "keys_reord" not in state:
+        raise RuntimeError("search_v12 requires build_v2-style state")
+
+    layout = _get_layout_v12(state, q_head_to_kv, q)
+    h_q = q.shape[0]
+    s = layout["num_subspaces"]
+    max_d = layout["max_d"]
+    d = q.shape[1]
+
+    if d == s * max_d:
+        q_packed = q.view(h_q, s, max_d).transpose(0, 1).contiguous()
+    else:
+        _, q_packed, _ = pack_query_subspaces(q, layout)
+        q_packed = q_packed.reshape(s, h_q, max_d).contiguous()
+
+    q_norm = q_packed.norm(dim=-1).contiguous()
+    th_packed = th_per_subspace.reshape(s, h_q).contiguous()
+    cluster_pass_flat = triton_fused_cluster_pass(
+        q_packed,
+        q_norm,
+        th_packed,
+        layout["centers"],
+        layout["radii"],
+        layout["groups"],
+    )
+
+    h_kv = layout["base_heads"]
+    k = layout["K"]
+    bf = layout["bf"]
+    n_pad = layout["N_pad"]
+    groups = layout["groups"]
+    groups_pow = max(_next_pow2(groups), 8)
+    anchor_s = layout["anchor_subspace"]
+
+    out = torch.full(
+        (h_q, n_pad),
+        float("-inf"),
+        device=q.device,
+        dtype=torch.float32,
+    )
+    grid = lambda meta: (h_kv, triton.cdiv(k, meta["PARENTS_PER_PROG"]))
+    _fused_anchor_parent_batch_sparse_kernel[grid](
+        q.contiguous(),
+        layout["keys_blocks_t"],
+        layout["assigns_parent_major"],
+        cluster_pass_flat,
+        layout["invalid_blocks_i8"],
+        out,
+        h_q,
+        h_kv,
+        k,
+        n_pad,
+        ANCHOR_S=anchor_s,
+        D=d,
+        BF=bf,
+        GROUPS=groups,
+        GROUPS_POW=groups_pow,
+        S=s,
+    )
+
+    buf_layout_shim = {
+        "mode": layout["mode"],
+        "groups": groups,
+        "base_heads": h_kv,
+    }
+    buf_dots = buffer_dot(q, buffer_keys, q_head_to_kv, buf_layout_shim)
+    return out if buf_dots is None else torch.cat([out, buf_dots], dim=1)
+
+
+KERNEL = search

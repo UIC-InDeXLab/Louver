@@ -41,7 +41,7 @@ class CUDAIndexer(BaseIndexer):
         # to build
         self.dim: int = 0
         self.children: Optional[torch.Tensor] = None  # padded keys
-        self.values: Optional[torch.Tensor] = None  # (1,H,N,V), aligned with children
+        self.values: Optional[torch.Tensor] = None  # (H,N,V), aligned with children
         self.parents: Optional[torch.Tensor] = None  # level 1
         self.parent_radii: Optional[torch.Tensor] = None  # level 1
         self.grand_parents: Optional[torch.Tensor] = None  # level 2
@@ -75,11 +75,7 @@ class CUDAIndexer(BaseIndexer):
                 self.branching_factor,
                 values=values,
             )
-            self.values = (
-                None
-                if values_layout is None
-                else values_layout.unsqueeze(0).contiguous()
-            )
+            self.values = None if values_layout is None else values_layout.contiguous()
             self.parent_radii = self._compute_parent_radii_from_layout()
         elif self.depth == CUDAIndexer.DEPTH.THREE_LEVELS:
             (
@@ -92,11 +88,7 @@ class CUDAIndexer(BaseIndexer):
                 self.branching_factor,
                 values=values,
             )
-            self.values = (
-                None
-                if values_layout is None
-                else values_layout.unsqueeze(0).contiguous()
-            )
+            self.values = None if values_layout is None else values_layout.contiguous()
             self.parent_radii = self._compute_parent_radii_from_layout()
             self.grand_parent_radii = self._compute_grandparent_radii_from_layout()
         else:
@@ -197,6 +189,68 @@ class CUDAIndexer(BaseIndexer):
         assert radii.is_cuda
         return radii
 
+    # ------------------------------------------------------------------
+    # GPU-native nearest-centroid helpers (BLAS-based, auto-chunked)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _gpu_nearest(
+        x: torch.Tensor,  # (H, n, d)
+        C: torch.Tensor,  # (H, K, d)
+    ):
+        """Return ``(dist1, assign)`` — L2 distance and index of nearest
+        centroid for every point.  Automatically chunks the ``(H, n, K)``
+        distance matrix when it would exceed ~512 MB."""
+        H, n, _ = x.shape
+        K = C.shape[1]
+        device = x.device
+        limit = 512 * 1024 * 1024 // 4  # 512 MB in float32 elements
+        if H * n * K <= limit:
+            d = torch.cdist(x, C)  # (H, n, K)
+            return d.min(dim=2)  # namedtuple (values, indices)
+        chunk = max(1, limit // (H * K))
+        dists = torch.empty(H, n, device=device, dtype=torch.float32)
+        assign = torch.empty(H, n, device=device, dtype=torch.int64)
+        for i in range(0, n, chunk):
+            j = min(i + chunk, n)
+            dc = torch.cdist(x[:, i:j], C)
+            dists[:, i:j], assign[:, i:j] = dc.min(dim=2)
+        return dists, assign
+
+    @staticmethod
+    def _gpu_assign_sq(
+        x: torch.Tensor,  # (H, n, d)
+        C: torch.Tensor,  # (H, K, d)
+        x_sq: torch.Tensor,  # (H, n) — precomputed ||x||²
+    ) -> torch.Tensor:
+        """Assign each point to nearest centroid using BLAS-based squared
+        L2 distance.  Returns ``assign`` of shape ``(H, n)``."""
+        H, n, _ = x.shape
+        K = C.shape[1]
+        device = x.device
+        limit = 512 * 1024 * 1024 // 4
+
+        c_sq = (C * C).sum(dim=-1)  # (H, K)
+        CT = C.transpose(1, 2)  # (H, d, K)
+
+        if H * n * K <= limit:
+            dots = torch.bmm(x, CT)  # (H, n, K)
+            d2 = x_sq.unsqueeze(2) - 2 * dots + c_sq.unsqueeze(1)
+            return d2.argmin(dim=2)
+
+        chunk = max(1, limit // (H * K))
+        assign = torch.empty(H, n, device=device, dtype=torch.int64)
+        for i in range(0, n, chunk):
+            j = min(i + chunk, n)
+            dots_c = torch.bmm(x[:, i:j], CT)
+            d2_c = x_sq[:, i:j].unsqueeze(2) - 2 * dots_c + c_sq.unsqueeze(1)
+            assign[:, i:j] = d2_c.argmin(dim=2)
+        return assign
+
+    # ------------------------------------------------------------------
+    # One-level builder (pure GPU)
+    # ------------------------------------------------------------------
+
     def _build_random_bf_level_batched(
         self,
         x: torch.Tensor,  # (H, n, d) float32 CUDA
@@ -205,133 +259,177 @@ class CUDAIndexer(BaseIndexer):
         seed: int = 1234,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        One-level builder, batched over heads.
+        GPU-native one-level builder using random init + Lloyd's K-means
+        with empty-cluster recovery.  Everything stays on GPU.
 
-        Returns:
-        - C: (H, K, d) centroids (randomly selected points from x per head)
-        - selected: (H, K, bf) indices into x[h] (0..n-1), or -1 if padded
+        Steps
+        -----
+        1) **Random init** — select K distinct points per head.
+        2) **Lloyd's refinement** with BLAS-based squared-distance
+           (``bmm``) and empty-cluster splitting (re-seed dead centroids
+           with the point farthest from its own centroid).
+        3) **bf-bounded composite-sort selection** — keep the ``bf``
+           closest points per centroid.
+        4) **Overflow placement** — leftovers go to nearest centroid with
+           remaining room.
+        5) **Centroid recomputation** — mean of final children.
 
-        Where:
-        H = #heads, n = #points per head, d = dim
-        K = max(1, ceil(n / bf))  -- ceiling so every key gets a slot
+        Returns
+        -------
+        C        : (H, K, d)  float32 centroids on CUDA.
+        selected : (H, K, bf) int64 indices into ``x[h]``, or -1 if padded.
         """
         assert x.is_cuda and x.dtype == torch.float32 and x.ndim == 3
         device = x.device
         H, n, d = x.shape
         assert bf >= 1
-        # Ceiling division: K*bf >= n so every key has a slot.
         K = max(1, (n + bf - 1) // bf)
+        niter = max(int(self.max_iterations), 1)
 
-        # ----------------------------
-        # 1) Random centroid selection (per head)
-        # ----------------------------
-        # 1) generate random scores per head
-        rand_scores = torch.rand(H, n, device=device)
+        # ==============================================================
+        # 1)  Random initialisation  (GPU, O(n) — no sequential loop)
+        # ==============================================================
+        gen = torch.Generator(device=device).manual_seed(seed)
+        perm = torch.argsort(torch.rand(H, n, device=device, generator=gen), dim=1)
+        C = x.gather(
+            1, perm[:, :K].unsqueeze(-1).expand(-1, -1, d)
+        ).clone()  # (H, K, d)
 
-        # 2) take top-K per head (unique indices)
-        cent_idx = torch.topk(rand_scores, K, dim=1).indices  # (H, K)
+        # ==============================================================
+        # 2)  Lloyd's refinement  (BLAS-based, GPU)
+        # ==============================================================
+        x_sq = (x * x).sum(dim=-1)  # (H, n)
 
-        # 3) gather centroids
-        C = x[
-            torch.arange(H, device=device)[:, None], cent_idx  # (H,1)  # (H,K)
-        ]  # -> (H, K, d)
+        for _ in range(niter):
+            assign = CUDAIndexer._gpu_assign_sq(x, C, x_sq)  # (H, n)
 
-        # ----------------------------
-        # 2) Assign each point -> nearest centroid (batched over heads)
-        # ----------------------------
-        # dist: (H, n, K)
-        # torch.cdist supports batched inputs: (H,n,d) vs (H,K,d)
-        dist = torch.cdist(x, C)  # Euclidean
-        dist1, idx1 = dist.min(dim=2)  # (H, n), (H, n) centroid assignment
+            idx_e = assign.unsqueeze(-1).expand(H, n, d)
+            sums = torch.zeros(H, K, d, device=device)
+            sums.scatter_add_(1, idx_e, x)
+            cnt = torch.zeros(H, K, device=device)
+            cnt.scatter_add_(1, assign, torch.ones(H, n, device=device))
 
-        # ----------------------------
-        # 3) Choose up to bf closest per centroid (true lexicographic by (centroid, dist))
-        #    Vectorized version of your "composite sort" trick, but batched.
-        # ----------------------------
-        # dist_rank: rank of each point by distance within each head
-        dist_order = torch.argsort(
-            dist1, dim=1
-        )  # (H, n) indices of points by increasing dist
+            # --- empty-cluster recovery ---
+            empty = cnt == 0
+            if empty.any():
+                # distance of each point to its assigned centroid
+                C_asgn = C.gather(
+                    1, assign.unsqueeze(-1).expand(-1, -1, d)
+                )  # (H, n, d)
+                own_d = ((x - C_asgn) ** 2).sum(dim=-1)  # (H, n)
+                for h in range(H):
+                    ek = empty[h].nonzero(as_tuple=False).view(-1)
+                    if ek.numel() == 0:
+                        continue
+                    _, far = own_d[h].topk(ek.numel())
+                    sums[h, ek] = x[h, far]
+                    cnt[h, ek] = 1
+
+            ne = cnt > 0
+            sums[ne] /= cnt[ne].unsqueeze(-1)
+            sums[~ne] = C[~ne]
+            C = sums
+
+        # ==============================================================
+        # 3)  bf-bounded composite-sort selection  (GPU)
+        # ==============================================================
+        dist1, idx1 = CUDAIndexer._gpu_nearest(x, C)
+
+        # Global distance rank per head
+        dist_order = dist1.argsort(dim=1)
         dist_rank = torch.empty_like(dist_order)
-        dist_rank.scatter_(
-            1, dist_order, torch.arange(n, device=device).view(1, n).expand(H, n)
-        )
+        n_range = torch.arange(n, device=device).view(1, n).expand(H, -1)
+        dist_rank.scatter_(1, dist_order, n_range)
 
-        # composite key to group by centroid then by distance rank
-        composite = idx1.to(torch.int64) * (n + 1) + dist_rank.to(torch.int64)  # (H, n)
-        order = torch.argsort(
-            composite, dim=1
-        )  # (H, n) grouped by centroid, then closest first
+        # Composite key: (centroid, dist-rank) → groups by centroid,
+        # closest-first within group.
+        composite = idx1.to(torch.int64) * (n + 1) + dist_rank.to(torch.int64)
+        order = composite.argsort(dim=1)
+        idx_grp = idx1.gather(1, order)  # centroid id in grouped order
+        pts_grp = order  # original point indices
 
-        idx_grp = idx1.gather(1, order)  # (H, n) centroid id per grouped position
-        pts_grp = order  # (H, n) original point indices in grouped order
+        counts = torch.zeros(H, K, device=device, dtype=torch.int64)
+        counts.scatter_add_(1, idx1, torch.ones(H, n, device=device, dtype=torch.int64))
+        offsets = torch.zeros(H, K + 1, device=device, dtype=torch.int64)
+        offsets[:, 1:] = counts.cumsum(dim=1)
 
-        # counts per centroid (batched bincount via scatter_add)
-        counts = torch.zeros((H, K), device=device, dtype=torch.int64)
-        ones = torch.ones((H, n), device=device, dtype=torch.int64)
-        counts.scatter_add_(1, idx1.clamp_(0, K - 1), ones)
+        pos = torch.arange(n, device=device, dtype=torch.int64).view(1, n).expand(H, -1)
+        start = offsets[:, :-1].gather(1, idx_grp)
+        local_rank = pos - start
 
-        # offsets: (H, K+1), offsets[h, c] = starting index in grouped list for centroid c
-        offsets = torch.zeros((H, K + 1), device=device, dtype=torch.int64)
-        offsets[:, 1:] = torch.cumsum(counts, dim=1)
-
-        # For each grouped position p, compute local_rank within its centroid-run:
-        pos = (
-            torch.arange(n, device=device, dtype=torch.int64).view(1, n).expand(H, n)
-        )  # (H, n)
-        start = offsets[:, :-1].gather(1, idx_grp)  # (H, n)
-        local_rank = pos - start  # (H, n), 0..count-1 inside centroid block
-
-        mask = local_rank < bf  # take first bf per centroid
-        # Prepare output (H, K, bf)
+        mask = local_rank < bf
         selected = torch.full((H, K, bf), -1, device=device, dtype=torch.int64)
 
-        # Scatter selected points into (H,K,bf) using flat indexing
         h_idx = (
             torch.arange(H, device=device, dtype=torch.int64).view(H, 1).expand(H, n)
         )
         c_idx = idx_grp.to(torch.int64)
         r_idx = local_rank.to(torch.int64)
-
-        # Keep only valid entries (first bf per centroid)
-        h_m = h_idx[mask]
-        c_m = c_idx[mask]
-        r_m = r_idx[mask]
+        h_m, c_m, r_m = h_idx[mask], c_idx[mask], r_idx[mask]
         p_m = pts_grp[mask].to(torch.int64)
-
         flat = h_m * (K * bf) + c_m * bf + r_m
         selected.view(-1).scatter_(0, flat, p_m)
 
-        # ----------------------------
-        # 4) Optional: fill deficits (-1) using random leftovers per head
-        #    (simple + deterministic; loops over H only)
-        # ----------------------------
+        # ==============================================================
+        # 4)  Overflow — assign leftovers to nearest centroid w/ room
+        # ==============================================================
         if (selected == -1).any():
             for h in range(H):
                 sel_h = selected[h]  # (K, bf)
-                missing = (sel_h == -1).view(-1)
-                m = int(missing.sum().item())
-                if m == 0:
+                empty_mask = sel_h == -1
+                if not empty_mask.any():
                     continue
 
-                used = torch.zeros((n,), device=device, dtype=torch.bool)
+                used = torch.zeros(n, device=device, dtype=torch.bool)
                 taken = sel_h[sel_h != -1]
-                if taken.numel() > 0:
+                if taken.numel():
                     used[taken] = True
-                leftovers = torch.nonzero(~used, as_tuple=False).view(-1)
+                leftovers = (~used).nonzero(as_tuple=False).view(-1)
                 if leftovers.numel() == 0:
                     continue
 
-                gh = torch.Generator(device=device)
-                gh.manual_seed(seed + 2003 * h + 17)
-                perm = torch.randperm(leftovers.numel(), generator=gh, device=device)
-                fill = leftovers[perm[: min(m, leftovers.numel())]]
+                room = empty_mask.sum(dim=1)  # (K,)
+                has_room = (room > 0).nonzero(as_tuple=False).view(-1)
+                if has_room.numel() == 0:
+                    continue
 
-                flat_sel = sel_h.view(-1)
-                flat_sel[missing.nonzero(as_tuple=False).view(-1)[: fill.numel()]] = (
-                    fill
-                )
-                selected[h] = flat_sel.view(K, bf)
+                X_left = x[h, leftovers]  # (L, d)
+                C_room = C[h, has_room]  # (R, d)
+                d_lr = torch.cdist(X_left.unsqueeze(0), C_room.unsqueeze(0)).squeeze(
+                    0
+                )  # (L, R)
+
+                pt_order = d_lr.min(dim=1).values.argsort()
+                cap = room[has_room].clone()
+                fp = (bf - room[has_room]).clone()  # fill-pointer
+
+                for li in pt_order:
+                    li_v = li.item()
+                    pt = leftovers[li_v].item()
+                    for ri in d_lr[li_v].argsort():
+                        ri_v = ri.item()
+                        if cap[ri_v] > 0:
+                            c = has_room[ri_v].item()
+                            sel_h[c, fp[ri_v].item()] = pt
+                            fp[ri_v] += 1
+                            cap[ri_v] -= 1
+                            break
+                selected[h] = sel_h
+
+        # ==============================================================
+        # 5)  Recompute centroids from final children (vectorised)
+        # ==============================================================
+        safe = selected.clamp_min(0)  # (H, K, bf)
+        g = x.gather(1, safe.view(H, K * bf).unsqueeze(-1).expand(-1, -1, d)).view(
+            H, K, bf, d
+        )
+        valid = (selected != -1).unsqueeze(-1)  # (H, K, bf, 1)
+        g = g * valid.float()
+        sums = g.sum(dim=2)  # (H, K, d)
+        cnt = valid.squeeze(-1).sum(dim=2, keepdim=True).clamp_min(1).float()
+        C_new = sums / cnt
+        has_any = (selected != -1).any(dim=2)  # (H, K)
+        C[has_any] = C_new[has_any]
 
         return C, selected
 
@@ -546,7 +644,7 @@ class CUDAIndexer(BaseIndexer):
         """Incremental update of the index with new key vectors.
 
         Args:
-            new_keys: (1, H, M, D) new key vectors per head.
+            new_keys: (H, M, D) new key vectors per head.
             new_values: optional (1, H, M, V) value vectors per head.
 
         Algorithm:
@@ -561,15 +659,14 @@ class CUDAIndexer(BaseIndexer):
             4. Update all radii and refresh internal state.
         """
         assert new_values is None or new_keys.shape == new_values.shape
-        assert new_keys.ndim == 4
 
-        new_keys = new_keys.squeeze(0).contiguous()
+        new_keys = new_keys.contiguous()
         H, M, D = new_keys.shape
         assert D == self.dim
 
         has_values = self.values is not None
         if has_values:
-            new_values = new_values.squeeze(0).contiguous()
+            new_values = new_values.contiguous()
 
         bf = int(self.branching_factor)
         device = new_keys.device
@@ -596,7 +693,7 @@ class CUDAIndexer(BaseIndexer):
                 H, M
             )
             placed_rows = placed_flat[placed_mask].to(torch.long)
-            values_3d = self.values.squeeze(0)
+            values_3d = self.values
             values_3d[h_idx[placed_mask], placed_rows] = new_values[placed_mask]
 
         # Update parent radii for placed keys (atomic max).
@@ -651,7 +748,7 @@ class CUDAIndexer(BaseIndexer):
             ).contiguous()
             if has_values:
                 self.values = torch.cat(
-                    [self.values, new_children_values_flat.unsqueeze(0)], dim=-2
+                    [self.values, new_children_values_flat], dim=-2
                 ).contiguous()
             self._refresh_after_update()
             return self
@@ -912,7 +1009,7 @@ class CUDAIndexer(BaseIndexer):
             )
         has_values = new_children_values_flat is not None
         V = int(new_children_values_flat.shape[-1]) if has_values else 0
-        dst_values = self.values.squeeze(0) if has_values else None
+        dst_values = self.values if has_values else None
 
         # Find nearest GP for each new parent.
         nearest_gp, _ = nearest_l2_triton_batched(
@@ -1194,7 +1291,7 @@ class CUDAIndexer(BaseIndexer):
         ).contiguous()
         if has_values:
             self.values = torch.cat(
-                [self.values, new_children_values_block.unsqueeze(0)], dim=-2
+                [self.values, new_children_values_block], dim=-2
             ).contiguous()
 
     def _update_gp_radii_for_placed_children(

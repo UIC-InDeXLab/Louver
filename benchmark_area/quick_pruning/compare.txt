@@ -1,0 +1,99 @@
+Loading captured QKV from capture_qkv_4000_meta-llama_Llama-3.2-3B-Instruct.pt ...
+Layer 15: H_kv=8, H_q=24, N=4461, D=128
+K=1116 clusters (bf=4), 30 queries, topk=20
+====================================================================================================
+
+sub_kcenter_S2_contiguous: building 2 subspace indexes (K=1116 each) ...
+  scanned=0.8973  pruned=0.1027  search=1.007ms  build=290.8ms  g=1.0  ratio=1.147  (0.87x)
+  per-subspace scanned fraction: S0_scan=0.9461  S1_scan=0.9442
+
+sub_kcenter_S4_contiguous: building 4 subspace indexes (K=1116 each) ...
+  scanned=0.7203  pruned=0.2797  search=0.359ms  build=139.2ms  g=1.0  ratio=0.970  (1.03x)
+  per-subspace scanned fraction: S0_scan=0.9745  S1_scan=0.8549  S2_scan=0.9771  S3_scan=0.8573
+
+sub_kcenter_S8_contiguous: building 8 subspace indexes (K=1116 each) ...
+  scanned=0.4609  pruned=0.5391  search=0.679ms  build=271.2ms  g=1.0  ratio=0.711  (1.41x)
+  per-subspace scanned fraction: S0_scan=0.9770  S1_scan=0.9152  S2_scan=0.9391  S3_scan=0.7840  S4_scan=0.9772  S5_scan=0.9187  S6_scan=0.9509  S7_scan=0.7680
+
+sub_kcenter_S16_contiguous: building 16 subspace indexes (K=1116 each) ...
+  scanned=0.1632  pruned=0.8368  search=1.321ms  build=548.5ms  g=1.0  ratio=0.413  (2.42x)
+  per-subspace scanned fraction: S0_scan=0.9697  S1_scan=0.9537  S2_scan=0.8992  S3_scan=0.8309  S4_scan=0.9516  S5_scan=0.8752  S6_scan=0.8196  S7_scan=0.7644  S8_scan=0.9707  S9_scan=0.9518  S10_scan=0.8959  S11_scan=0.8384  S12_scan=0.9298  S13_scan=0.8991  S14_scan=0.7811  S15_scan=0.7792
+
+sub_kcenter_S2_interleaved: building 2 subspace indexes (K=1116 each) ...
+  scanned=0.9093  pruned=0.0907  search=0.201ms  build=78.3ms  g=1.0  ratio=1.159  (0.86x)
+  per-subspace scanned fraction: S0_scan=0.9612  S1_scan=0.9417
+
+sub_kcenter_S4_interleaved: building 4 subspace indexes (K=1116 each) ...
+  scanned=0.8008  pruned=0.1992  search=0.361ms  build=138.8ms  g=1.0  ratio=1.051  (0.95x)
+  per-subspace scanned fraction: S0_scan=0.9617  S1_scan=0.9496  S2_scan=0.9341  S3_scan=0.9219
+
+sub_kcenter_S8_interleaved: building 8 subspace indexes (K=1116 each) ...
+  scanned=0.5503  pruned=0.4497  search=0.697ms  build=283.9ms  g=1.0  ratio=0.800  (1.25x)
+  per-subspace scanned fraction: S0_scan=0.9549  S1_scan=0.9426  S2_scan=0.9244  S3_scan=0.9030  S4_scan=0.9207  S5_scan=0.9089  S6_scan=0.9046  S7_scan=0.8958
+
+sub_kcenter_S16_interleaved: building 16 subspace indexes (K=1116 each) ...
+  scanned=0.1720  pruned=0.8280  search=1.334ms  build=543.9ms  g=1.0  ratio=0.422  (2.37x)
+  per-subspace scanned fraction: S0_scan=0.9077  S1_scan=0.9202  S2_scan=0.9083  S3_scan=0.9020  S4_scan=0.8877  S5_scan=0.9031  S6_scan=0.8658  S7_scan=0.8724  S8_scan=0.8996  S9_scan=0.8730  S10_scan=0.8642  S11_scan=0.8402  S12_scan=0.8768  S13_scan=0.8101  S14_scan=0.8259  S15_scan=0.8397
+
+sub_kcenter_S2_random: building 2 subspace indexes (K=1116 each) ...
+  scanned=0.9097  pruned=0.0903  search=0.215ms  build=104.6ms  g=1.0  ratio=1.160  (0.86x)
+  per-subspace scanned fraction: S0_scan=0.9521  S1_scan=0.9505
+
+sub_kcenter_S4_random: building 4 subspace indexes (K=1116 each) ...
+  scanned=0.8265  pruned=0.1735  search=0.404ms  build=140.4ms  g=1.0  ratio=1.077  (0.93x)
+  per-subspace scanned fraction: S0_scan=0.9437  S1_scan=0.9559  S2_scan=0.9381  S3_scan=0.9551
+
+sub_kcenter_S8_random: building 8 subspace indexes (K=1116 each) ...
+  scanned=0.6294  pruned=0.3706  search=0.694ms  build=275.3ms  g=1.0  ratio=0.879  (1.14x)
+  per-subspace scanned fraction: S0_scan=0.9324  S1_scan=0.9317  S2_scan=0.9368  S3_scan=0.9318  S4_scan=0.9323  S5_scan=0.9378  S6_scan=0.9382  S7_scan=0.9440
+
+sub_kcenter_S16_random: building 16 subspace indexes (K=1116 each) ...
+  scanned=0.2375  pruned=0.7625  search=1.361ms  build=548.2ms  g=1.0  ratio=0.488  (2.05x)
+  per-subspace scanned fraction: S0_scan=0.8976  S1_scan=0.9087  S2_scan=0.8857  S3_scan=0.8964  S4_scan=0.9106  S5_scan=0.8840  S6_scan=0.8762  S7_scan=0.8968  S8_scan=0.8858  S9_scan=0.8934  S10_scan=0.8912  S11_scan=0.8887  S12_scan=0.9053  S13_scan=0.8868  S14_scan=0.9123  S15_scan=0.8986
+
+sub_kcenter_S2_pca: building 2 subspace indexes (K=1116 each) ...
+  scanned=0.8451  pruned=0.1549  search=0.214ms  build=92.8ms  g=1.0  ratio=1.095  (0.91x)
+  per-subspace scanned fraction: S0_scan=0.8594  S1_scan=0.9837
+
+sub_kcenter_S4_pca: building 4 subspace indexes (K=1116 each) ...
+  scanned=0.7393  pruned=0.2607  search=0.379ms  build=149.9ms  g=1.0  ratio=0.989  (1.01x)
+  per-subspace scanned fraction: S0_scan=0.7755  S1_scan=0.9824  S2_scan=0.9849  S3_scan=0.9844
+
+sub_kcenter_S8_pca: building 8 subspace indexes (K=1116 each) ...
+  scanned=0.5287  pruned=0.4713  search=0.719ms  build=284.4ms  g=1.0  ratio=0.779  (1.28x)
+  per-subspace scanned fraction: S0_scan=0.6346  S1_scan=0.9342  S2_scan=0.9720  S3_scan=0.9764  S4_scan=0.9795  S5_scan=0.9839  S6_scan=0.9838  S7_scan=0.9830
+
+sub_kcenter_S16_pca: building 16 subspace indexes (K=1116 each) ...
+  scanned=0.2413  pruned=0.7587  search=1.346ms  build=553.3ms  g=1.0  ratio=0.491  (2.04x)
+  per-subspace scanned fraction: S0_scan=0.5418  S1_scan=0.8046  S2_scan=0.8837  S3_scan=0.9083  S4_scan=0.9425  S5_scan=0.9478  S6_scan=0.9563  S7_scan=0.9603  S8_scan=0.9673  S9_scan=0.9645  S10_scan=0.9723  S11_scan=0.9758  S12_scan=0.9738  S13_scan=0.9761  S14_scan=0.9778  S15_scan=0.9776
+
+Baseline: kcenter + ball_centroid ...
+  scanned=0.9379  pruned=0.0621  search=0.044ms  build=52.7ms  g=1.0  ratio=1.188  (0.84x)
+
+Baseline: kmeans + ball_centroid ...
+  scanned=0.9341  pruned=0.0659  search=0.044ms  build=47.8ms  g=1.0  ratio=1.184  (0.84x)
+
+====================================================================================================
+METHOD                               SCANNED   PRUNED  SEARCH_ms  BUILD_ms     g   RATIO  SPEEDUP
+----------------------------------------------------------------------------------------------------
+sub_kcenter_S16_contiguous            0.1632   0.8368      1.321     548.5   1.0   0.413    2.42x
+sub_kcenter_S16_interleaved           0.1720   0.8280      1.334     543.9   1.0   0.422    2.37x
+sub_kcenter_S16_random                0.2375   0.7625      1.361     548.2   1.0   0.488    2.05x
+sub_kcenter_S16_pca                   0.2413   0.7587      1.346     553.3   1.0   0.491    2.04x
+sub_kcenter_S8_contiguous             0.4609   0.5391      0.679     271.2   1.0   0.711    1.41x
+sub_kcenter_S8_pca                    0.5287   0.4713      0.719     284.4   1.0   0.779    1.28x
+sub_kcenter_S8_interleaved            0.5503   0.4497      0.697     283.9   1.0   0.800    1.25x
+sub_kcenter_S8_random                 0.6294   0.3706      0.694     275.3   1.0   0.879    1.14x
+sub_kcenter_S4_contiguous             0.7203   0.2797      0.359     139.2   1.0   0.970    1.03x
+sub_kcenter_S4_pca                    0.7393   0.2607      0.379     149.9   1.0   0.989    1.01x
+sub_kcenter_S4_interleaved            0.8008   0.1992      0.361     138.8   1.0   1.051    0.95x
+sub_kcenter_S4_random                 0.8265   0.1735      0.404     140.4   1.0   1.077    0.93x
+sub_kcenter_S2_pca                    0.8451   0.1549      0.214      92.8   1.0   1.095    0.91x
+sub_kcenter_S2_contiguous             0.8973   0.1027      1.007     290.8   1.0   1.147    0.87x
+sub_kcenter_S2_interleaved            0.9093   0.0907      0.201      78.3   1.0   1.159    0.86x
+sub_kcenter_S2_random                 0.9097   0.0903      0.215     104.6   1.0   1.160    0.86x
+kmeans+ball_centroid                  0.9341   0.0659      0.044      47.8   1.0   1.184    0.84x
+kcenter+ball_centroid                 0.9379   0.0621      0.044      52.7   1.0   1.188    0.84x
+====================================================================================================
+
+Best: sub_kcenter_S16_contiguous -> scanned=0.1632 (pruned 0.8368, 2.42x)
