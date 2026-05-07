@@ -3,16 +3,10 @@
 </p>
 
 <h1 align="center">
-  Louver: Sparse Attention with Range Searching Index
+  Halfspace Range-Searching Index for Sparse KV Attention
 </h1>
 
-<p align="center">
-  Coming soon...
-</p>
-
-# Louver: Halfspace Range-Searching Index for Sparse KV Attention
-
-Louver is a KV cache sparse attention system that reduces token selection to halfspace range searching, giving a provable zero-false-negative guarantee. It supports GPU-resident and CPU-offloaded KV caches with custom fused kernels for both.
+Louver is a KV cache sparse attention system that reduces token selection to halfspace range searching, giving a provable zero-false-negative guarantee. It supports GPU-only, CPU-only, and CPU-offloaded KV caches with custom fused kernels for both.
 
 ## Installation
 
