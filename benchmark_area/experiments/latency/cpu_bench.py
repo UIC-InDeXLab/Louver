@@ -37,11 +37,10 @@ sys.path.insert(0, str(REPO_ROOT))
 # Allow 'from hira.X import Y' regardless of project directory name.
 # pruning_bench_utils and other internal modules use absolute 'hira.*' imports.
 import types as _types
-if 'hira' not in sys.modules:
-    _hira = _types.ModuleType('hira')
-    _hira.__path__ = [str(REPO_ROOT)]
-    _hira.__package__ = 'hira'
-    sys.modules['hira'] = _hira
+_hira = _types.ModuleType('hira')
+_hira.__path__ = [str(REPO_ROOT)]
+_hira.__package__ = 'hira'
+sys.modules['hira'] = _hira
 
 from benchmark_area.kernel_impl.TA_filter_alg.cpu.cpu_index import (
     BUFFER_SIZE,

@@ -27,11 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 import types as _types
-if 'hira' not in sys.modules:
-    _hira = _types.ModuleType('hira')
-    _hira.__path__ = [str(REPO_ROOT)]
-    _hira.__package__ = 'hira'
-    sys.modules['hira'] = _hira
+_hira = _types.ModuleType('hira')
+_hira.__path__ = [str(REPO_ROOT)]
+_hira.__package__ = 'hira'
+sys.modules['hira'] = _hira
 
 import benchmark_area.quick_pruning.pruning_bench_utils as _pbu
 from benchmark_area.quick_pruning.pruning_bench_utils import CaptureState  # noqa: E402
