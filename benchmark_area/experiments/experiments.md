@@ -29,15 +29,29 @@ Ordered by priority.
 - **GPU** (`gpu_bench.py`): louver, dense_eager, dense_flash, twilight
   - Twilight = full QK (flash) + top-p sort + full V — O(N), unavoidable
 - **CPU** (`cpu_bench.py`): louver, dense_eager, torch_sdpa
-- **Models:** Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct, DeepSeek-R1-Distill-Qwen-14B, Qwen2.5-14B-Instruct
+- **Models:** Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct
 - **Dataset:** one AIME 2024 problem, up to 40k generated tokens
 - **Workflow:** `capture_all.sh` → saves `.pt` per model (~400–600 MB each, ~2 GB total) → `gpu_bench.py --input-qkv` + `cpu_bench.py --input-qkv`
 - Reports: `latency/reports/gpu_bench_<model>.csv`, `cpu_bench_<model>.csv`
 
-### 3. Recall / False Negative Rate
-- Show Louver = 100% recall, baselines < 100%
-- Vary threshold τ or budget
-- Core theoretical claim — must be empirically confirmed
+### 3. Recall / False Negative Rate (`experiments/recall`)
+- Show Louver = 100% recall@k, all baselines < 100%
+- k ∈ {10, 20, 50, 100} — fixed budget (number of retrieved keys)
+- Core theoretical claim — empirically confirmed
+
+**Phase 1 — Index recall** (Louver vs ANN methods, same index these offloading papers use):
+  - Louver halfspace filter, HNSW [RetrievalAttention], IVF [InfLLM], PQ [PQCache], LSH [MagicPIG]
+
+**Phase 2 — Sparse-attention recall** (Louver vs fixed-budget sparse-attn methods):
+  - Louver (oracle threshold), Quest, StreamingLLM, Twilight
+
+**Implementation:** `recall_bench.py`
+  - Input: same `.pt` captures from Exp 2 (`latency/captures/`)
+  - ANN indices built once per KV head over full key set; 100 query samples per capture
+  - GPU-accelerated exact score computation for ground truth top-k
+  - Output: recall table + `reports/recall_<model>.csv`
+
+**Workflow:** `bash run.sh` (comment in/out captures per machine)
 
 ### 3.1. Offloading experiments
 - make an offloading version of louver and compare with offloading baselines.

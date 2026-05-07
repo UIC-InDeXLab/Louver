@@ -106,16 +106,14 @@ run_math() {
 # run_aime louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_problems 20
 # [SERVER2-DONE]
 # run_aime dense_sdpa                --method dense_sdpa --max_problems 20
-# [SERVER2-RUNNING]
+# [SERVER2-DONE]
 # run_aime twilight_p0.85            --method twilight   --top_p 0.85 --max_problems 20
 # [SERVER1-DONE]
 # run_aime h2o_b512                  --method h2o        --budget_tokens 512 --max_problems 20
 
-# [HERE-DONE]
+# --- MATH500
 # run_math louver_ta_budget_f15      --method louver_ta  --threshold_mode budget --budget_fraction 0.15 --sample_size 512 --max_samples 50
-# [SERVER3-DONE]
 # run_math dense_sdpa                --method dense_sdpa               --max_samples 50
-# [SERVER3-RUNNING]
 # run_math twilight_p0.85            --method twilight   --top_p 0.85 --max_samples 50
 
 echo "ALL DONE" | tee -a logs/summary.log

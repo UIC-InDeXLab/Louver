@@ -59,7 +59,7 @@ run_capture() {
 
 # run_capture llama_3b     --model meta-llama/Llama-3.2-3B-Instruct          --max-tokens 40000  # weights~5GB  + KV@40k~4.6GB  = ~11GB
 # run_capture qwen_7b      --model Qwen/Qwen2.5-7B-Instruct                  --max-tokens 40000  # weights~14GB + KV@40k~2.3GB  = ~17GB
-run_capture deepseek_14b --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B  --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
+# [FORGET THIS] run_capture deepseek_14b --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B  --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
 # run_capture qwen_14b     --model Qwen/Qwen2.5-14B-Instruct                 --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
 
 echo ""
