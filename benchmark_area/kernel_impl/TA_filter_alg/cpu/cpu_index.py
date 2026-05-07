@@ -90,6 +90,15 @@ class TAIndexCPU:
             raise RuntimeError(
                 f"update() requires full {BUFFER_SIZE}-key buffer; got {self._l_buf}"
             )
+        # Auto-expand arena if needed (each update adds BUFFER_SIZE/BF new parents)
+        new_parents = BUFFER_SIZE // BF
+        k_used = int(self.state["K_used"])
+        k_cap  = int(self.state["K_cap"])
+        if k_used + new_parents > k_cap:
+            grow_k = max(new_parents * 64, self.cfg.n_growth // BF)
+            new_k_cap = k_cap + grow_k
+            new_n_cap = new_k_cap * BF
+            expand_arena(self.state, k_cap=new_k_cap, n_cap=new_n_cap)
         update_v1(self.state, self._buf_keys, self._buf_values)
         self._buf_keys.zero_()
         self._buf_values.zero_()
