@@ -26,7 +26,7 @@
 #        python gpu_bench.py --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B \
 #            --n-tokens 32000 --n-steps 10000
 #
-# DISK SPACE: ~100-300 MB per model, ~800 MB total. Not an issue.
+# DISK SPACE: ~400-600 MB per model, ~2 GB total (float16, single layer, 40k tokens).
 #
 # ORDER: small models first (faster), large models last.
 # ============================================================
@@ -57,10 +57,12 @@ run_capture() {
     echo "=== [$STEP/$TOTAL] capture/$tag DONE ===" | tee -a logs/capture.log
 }
 
-run_capture llama_3b     --model meta-llama/Llama-3.2-3B-Instruct          --max-tokens 40000  # weights~5GB  + KV@40k~4.6GB  = ~11GB
-run_capture qwen_7b      --model Qwen/Qwen2.5-7B-Instruct                  --max-tokens 40000  # weights~14GB + KV@40k~2.3GB  = ~17GB
-run_capture deepseek_14b --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B  --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
-run_capture qwen_14b     --model Qwen/Qwen2.5-14B-Instruct                 --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
+# [HERE-DONE]
+# run_capture llama_3b     --model meta-llama/Llama-3.2-3B-Instruct          --max-tokens 40000  # weights~5GB  + KV@40k~4.6GB  = ~11GB
+# [HERE-DONE]
+# run_capture qwen_7b      --model Qwen/Qwen2.5-7B-Instruct                  --max-tokens 40000  # weights~14GB + KV@40k~2.3GB  = ~17GB
+# run_capture deepseek_14b --model deepseek-ai/DeepSeek-R1-Distill-Qwen-14B  --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
+# run_capture qwen_14b     --model Qwen/Qwen2.5-14B-Instruct                 --max-tokens 40000  # weights~28GB + KV@40k~7.9GB  = ~37GB (needs A100 40GB)
 
 echo ""
 echo "ALL CAPTURES DONE" | tee -a logs/capture.log

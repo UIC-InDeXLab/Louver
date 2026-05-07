@@ -203,8 +203,7 @@ def parse_args():
     p.add_argument("--refine-iter", type=int, default=5)
     p.add_argument("--n-growth", type=int, default=8192,
                    help="Arena growth increment (keeps reallocs infrequent).")
-    p.add_argument("--parallel-update", action="store_true",
-                   help="Overlap index update with next attention step.")
+
     p.add_argument("--update-stream-priority", type=int, default=-1)
     p.add_argument("--output-csv", type=Path, default=None,
                    help="Default: reports/gpu_bench_<stem>.csv")
@@ -277,7 +276,7 @@ def main():
         raise ValueError("Not enough keys for decoding. Adjust --prefill-frac.")
 
     print(f"Layer {layer}: H_q={H_q} H_kv={H_kv} D={D}")
-    print(f"prefill={n_prefill}  decode_steps={n_decode}  parallel_update={args.parallel_update}")
+    print(f"prefill={n_prefill}  decode_steps={n_decode}  parallel_update=True")
 
     # Build index on prefill keys/values
     prefill_keys   = keys[:, :n_prefill, :].contiguous()
@@ -285,7 +284,7 @@ def main():
     cfg = TAIndexConfig(
         n_growth=args.n_growth,
         refine_iter=args.refine_iter,
-        parallel_update=args.parallel_update,
+        parallel_update=True,
         update_stream_priority=args.update_stream_priority,
     )
     index = TAIndex(cfg)
@@ -329,7 +328,7 @@ def main():
     last_update_ms = 0.0
 
     sum_louver = sum_eager = sum_flash = sum_twilight = 0.0
-    parallel = args.parallel_update
+    parallel = True
     sim_start = time.perf_counter()
 
     bar = tqdm(range(n_decode), unit="step", dynamic_ncols=True,

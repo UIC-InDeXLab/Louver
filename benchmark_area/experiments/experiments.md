@@ -24,15 +24,15 @@ Ordered by priority.
 
 
 ### 2. Latency vs. Sequence Length (`experiments/latency`)
-- X-axis: N (8k → 128k), Y-axis: per-step decode latency (ms)
-- Compare: Louver GPU, FlashAttention,Twilight
-- Compare: on CPU
-- Must show Louver faster than `FlashAttention` at large N
-- **Dense baselines (both required):**
-  - `dense_eager` — standard PyTorch eager attention (slowest, reference)
-  - `dense_flash` — SDPA with FlashAttention backend (`SDPBackend.FLASH_ATTENTION`)
-- Models: DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-Distill-Qwen-14B
-- Dataset: AIME sample, with very long output.
+- X-axis: decode step (= N growing), Y-axis: per-step latency (ms)
+- Must show Louver sub-linear vs. dense O(N)
+- **GPU** (`gpu_bench.py`): louver, dense_eager, dense_flash, twilight
+  - Twilight = full QK (flash) + top-p sort + full V — O(N), unavoidable
+- **CPU** (`cpu_bench.py`): louver, dense_eager, torch_sdpa
+- **Models:** Llama-3.2-3B-Instruct, Qwen2.5-7B-Instruct, DeepSeek-R1-Distill-Qwen-14B, Qwen2.5-14B-Instruct
+- **Dataset:** one AIME 2024 problem, up to 40k generated tokens
+- **Workflow:** `capture_all.sh` → saves `.pt` per model (~400–600 MB each, ~2 GB total) → `gpu_bench.py --input-qkv` + `cpu_bench.py --input-qkv`
+- Reports: `latency/reports/gpu_bench_<model>.csv`, `cpu_bench_<model>.csv`
 
 ### 3. Recall / False Negative Rate
 - Show Louver = 100% recall, baselines < 100%
@@ -58,10 +58,6 @@ Ordered by priority.
 - X-axis: fraction of keys retrieved (or budget), Y-axis: accuracy
 - Louver's Pareto frontier vs. baselines
 - Shows zero-FN recall guarantee translates to better accuracy per compute
-
-### 6. CPU Experiments
-- Louver CPU vs. SDPA-FP32 vs. Quest (if CPU version exists)
-- Validates the CPU kernel claim
 
 ---
 
