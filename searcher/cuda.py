@@ -27,10 +27,10 @@ class CUDASearcher(BaseSearcher):
         num_kv_heads: int,
     ) -> torch.Tensor:
         if num_query_heads == num_kv_heads:
-            return torch.arange(num_query_heads, dtype=torch.long)
+            return torch.arange(num_query_heads, dtype=torch.long, device="cuda")
         assert num_query_heads % num_kv_heads == 0
         group_size = num_query_heads // num_kv_heads
-        return torch.arange(num_query_heads, dtype=torch.long) // group_size
+        return torch.arange(num_query_heads, dtype=torch.long, device="cuda") // group_size
 
     def _prepare_output_buffer(
         self, *, num_query_heads: int, num_keys: int, indexer: CUDAIndexer

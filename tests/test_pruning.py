@@ -44,8 +44,14 @@ pytestmark = pytest.mark.skipif(
 
 
 def _clustered_keys(
-    H: int, N: int, D: int, n_clusters: int = 20, seed: int = 0,
-    *, centre_norm: float = 15.0, noise_std: float = 0.15,
+    H: int,
+    N: int,
+    D: int,
+    n_clusters: int = 20,
+    seed: int = 0,
+    *,
+    centre_norm: float = 15.0,
+    noise_std: float = 0.15,
 ) -> torch.Tensor:
     """Generate (H, N, D) keys drawn from a mixture of Gaussians.
 
@@ -63,7 +69,7 @@ def _clustered_keys(
     keys = centres.gather(
         1, assign.unsqueeze(-1).expand(-1, -1, D)
     ) + noise_std * torch.randn(H, N, D, device="cuda", generator=gen)
-    return keys.float()                           # (H, N, D)
+    return keys.float()  # (H, N, D)
 
 
 def _random_queries(H: int, n_queries: int, D: int, seed: int) -> torch.Tensor:
@@ -75,7 +81,7 @@ def _random_queries(H: int, n_queries: int, D: int, seed: int) -> torch.Tensor:
 
 def _avg_scan_fraction(
     indexer: CUDAIndexer,
-    queries: torch.Tensor,      # (H_kv, n_queries, D) normalised
+    queries: torch.Tensor,  # (H_kv, n_queries, D) normalised
     q_head_to_kv: torch.Tensor,
 ) -> float:
     """Average scanned fraction across all heads and several queries.
@@ -88,22 +94,25 @@ def _avg_scan_fraction(
     H_q = q_head_to_kv.shape[0]
 
     # Build a small sample for threshold (like SampleMaxThreshold)
-    children = indexer.children                    # (H_kv, N, D)
+    children = indexer.children  # (H_kv, N, D)
     N = children.shape[1]
     sample_size = min(100, N)
     sample_idx = torch.randperm(N, device=children.device)[:sample_size]
-    sample = children[:, sample_idx, :]            # (H_kv, sample_size, D)
+    sample = children[:, sample_idx, :]  # (H_kv, sample_size, D)
     sample_q = sample.index_select(0, q_head_to_kv)  # (H_q, sample_size, D)
 
     fracs = []
     for qi in range(nq):
-        q = queries[:, qi, :]                         # (H_kv, D)
-        q_hq = q.index_select(0, q_head_to_kv)       # (H_q, D)
+        q = queries[:, qi, :]  # (H_kv, D)
+        q_hq = q.index_select(0, q_head_to_kv)  # (H_q, D)
         # Threshold = max dot product with the sample (SampleMaxThreshold)
         scores_sample = torch.einsum("hd,hsd->hs", q_hq, sample_q.float())
-        th = scores_sample.max(dim=-1).values         # (H_q,)
+        th = scores_sample.max(dim=-1).values  # (H_q,)
         stats = searcher.synthetic_scanned_fraction(
-            q_hq, th, indexer, q_head_to_kv=q_head_to_kv,
+            q_hq,
+            th,
+            indexer,
+            q_head_to_kv=q_head_to_kv,
         )
         fracs.append(stats["scanned_fraction_mean"])
     return sum(fracs) / len(fracs)
@@ -112,6 +121,7 @@ def _avg_scan_fraction(
 # ---------------------------------------------------------------------------
 # 1) Build-only pruning
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "depth, N, bf, max_scan",
@@ -127,20 +137,23 @@ def test_build_prunes_clustered_keys(depth, N, bf, max_scan):
     H, D = 4, 64
     keys = _clustered_keys(H, N, D, seed=100)
     indexer = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys)
 
     queries = _random_queries(H, 8, D, seed=200)
     q_map = torch.arange(H, device="cuda")
     scan = _avg_scan_fraction(indexer, queries, q_map)
-    assert scan < max_scan, (
-        f"scan fraction {scan:.4f} >= {max_scan}; pruning may be broken"
-    )
+    assert (
+        scan < max_scan
+    ), f"scan fraction {scan:.4f} >= {max_scan}; pruning may be broken"
 
 
 # ---------------------------------------------------------------------------
 # 2) Build + single update — pruning should not degrade much
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "depth, N, bf, max_scan_delta",
@@ -158,11 +171,15 @@ def test_update_preserves_pruning(depth, N, bf, max_scan_delta):
     n0 = int(N * 0.7)
 
     full = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys)
 
     inc = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys[:, :n0, :].contiguous())
     inc.update(keys[:, n0:, :].contiguous())
 
@@ -181,6 +198,7 @@ def test_update_preserves_pruning(depth, N, bf, max_scan_delta):
 # 3) Multiple incremental updates — cumulative pruning quality
 # ---------------------------------------------------------------------------
 
+
 def test_multiple_updates_preserve_pruning():
     """Build on 30% of keys, then 7 incremental updates.  Scan fraction
     should remain within a reasonable margin of the full-build baseline."""
@@ -189,12 +207,16 @@ def test_multiple_updates_preserve_pruning():
     keys = _clustered_keys(H, N, D, seed=500)
 
     full = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys)
 
     n0 = int(N * 0.3)
     inc = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys[:, :n0, :].contiguous())
     chunk = (N - n0) // 7
     pos = n0
@@ -224,6 +246,7 @@ def test_multiple_updates_preserve_pruning():
 # 4) Radii sanity — parent radii should tightly bound their children
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "depth",
     [CUDAIndexer.DEPTH.TWO_LEVELS, CUDAIndexer.DEPTH.THREE_LEVELS],
@@ -236,23 +259,25 @@ def test_parent_radii_are_tight(depth):
     H, N, D, bf = 4, 2000, 64, 8
     keys = _clustered_keys(H, N, D, seed=700)
     indexer = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys)
 
-    parents = indexer.parents.float()             # (H, m, D)
-    children = indexer.children.float()           # (H, m*bf, D)
-    radii = indexer.parent_radii                  # (H, m)
+    parents = indexer.parents.float()  # (H, m, D)
+    children = indexer.children.float()  # (H, m*bf, D)
+    radii = indexer.parent_radii  # (H, m)
     m = parents.shape[1]
 
     children_grouped = children.view(H, m, bf, D)
     diffs = children_grouped - parents.unsqueeze(2)
-    dists = torch.linalg.norm(diffs, dim=-1)     # (H, m, bf)
+    dists = torch.linalg.norm(diffs, dim=-1)  # (H, m, bf)
 
     # Mask padded children (they should not be counted)
     pad = float(indexer.pad_value)
     valid = ~torch.all(children_grouped == pad, dim=-1)
     dists_valid = torch.where(valid, dists, torch.tensor(0.0, device=dists.device))
-    recomputed = dists_valid.max(dim=2).values   # (H, m)
+    recomputed = dists_valid.max(dim=2).values  # (H, m)
 
     # Radii should match recomputed values exactly (up to float rounding)
     torch.testing.assert_close(radii, recomputed, atol=1e-3, rtol=1e-3)
@@ -261,6 +286,7 @@ def test_parent_radii_are_tight(depth):
 # ---------------------------------------------------------------------------
 # 5) Scan fraction decreases as N grows (more keys → more pruning)
 # ---------------------------------------------------------------------------
+
 
 def test_pruning_improves_with_more_keys():
     """With the same branching factor, adding more keys should yield
@@ -275,20 +301,23 @@ def test_pruning_improves_with_more_keys():
     for N in [1000, 3000, 6000]:
         keys = _clustered_keys(H, N, D, seed=900)
         idx = CUDAIndexer(
-            num_levels=depth, branching_factor=bf, max_iterations=10,
+            num_levels=depth,
+            branching_factor=bf,
+            max_iterations=10,
         ).build(keys)
         scans.append(_avg_scan_fraction(idx, queries, q_map))
 
     # Each step should prune more (or at least not regress significantly)
     for i in range(1, len(scans)):
-        assert scans[i] < scans[i - 1] + 0.05, (
-            f"scan fraction did not improve: N-series scans = {scans}"
-        )
+        assert (
+            scans[i] < scans[i - 1] + 0.05
+        ), f"scan fraction did not improve: N-series scans = {scans}"
 
 
 # ---------------------------------------------------------------------------
 # 6) GQA pruning — grouped-query attention should prune similarly
 # ---------------------------------------------------------------------------
+
 
 def test_gqa_pruning():
     """With GQA (H_q > H_kv), pruning should still be effective.  This
@@ -299,14 +328,16 @@ def test_gqa_pruning():
 
     keys = _clustered_keys(H_kv, N, D, seed=1000)
     indexer = CUDAIndexer(
-        num_levels=depth, branching_factor=bf, max_iterations=10,
+        num_levels=depth,
+        branching_factor=bf,
+        max_iterations=10,
     ).build(keys)
 
     queries = _random_queries(H_kv, 8, D, seed=1100)
-    q_map = (torch.arange(H_q, device="cuda") // (H_q // H_kv))
+    q_map = torch.arange(H_q, device="cuda") // (H_q // H_kv)
 
     # Expand queries to H_q by replicating per KV head
     scan = _avg_scan_fraction(indexer, queries, q_map)
-    assert scan < 0.75, (
-        f"GQA scan fraction {scan:.4f} >= 0.75; pruning broken with GQA mapping"
-    )
+    assert (
+        scan < 0.75
+    ), f"GQA scan fraction {scan:.4f} >= 0.75; pruning broken with GQA mapping"

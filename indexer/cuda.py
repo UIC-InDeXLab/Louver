@@ -645,7 +645,7 @@ class CUDAIndexer(BaseIndexer):
 
         Args:
             new_keys: (H, M, D) new key vectors per head.
-            new_values: optional (1, H, M, V) value vectors per head.
+            new_values: optional (H, M, V) value vectors per head.
 
         Algorithm:
             1. Find nearest parent for each new key; fill if the parent

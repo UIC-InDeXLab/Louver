@@ -172,3 +172,12 @@ benchmark_area/kernel_impl/kernels/archive/__pycache__/
 .aider*
 *.tex
 benchmark_area/experiments/baselines
+
+.claude
+.codex-plugins
+.agents
+.aider*
+.cursor
+.pytest_cache
+
+/\ /
