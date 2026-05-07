@@ -108,7 +108,7 @@ run_math() {
 # run_aime dense_sdpa                --method dense_sdpa --max_problems 20
 # [SERVER2-RUNNING]
 # run_aime twilight_p0.85            --method twilight   --top_p 0.85 --max_problems 20
-# [SERVER1-RUNNING]
+# [SERVER1-DONE]
 # run_aime h2o_b512                  --method h2o        --budget_tokens 512 --max_problems 20
 
 # [HERE-DONE]

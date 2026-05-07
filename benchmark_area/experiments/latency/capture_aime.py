@@ -23,11 +23,11 @@ from pathlib import Path
 import torch
 from transformers import AutoConfig
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-import hira.benchmark_area.quick_pruning.pruning_bench_utils as _pbu
-from hira.benchmark_area.quick_pruning.pruning_bench_utils import CaptureState  # noqa: E402
+import benchmark_area.quick_pruning.pruning_bench_utils as _pbu
+from benchmark_area.quick_pruning.pruning_bench_utils import CaptureState  # noqa: E402
 
 # ── Fallback problem (used when HuggingFace datasets unavailable) ─────────────
 _FALLBACK_PROBLEM = (

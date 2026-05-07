@@ -37,17 +37,17 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from hira.benchmark_area.kernel_impl.TA_filter_alg.index import (
+from benchmark_area.kernel_impl.TA_filter_alg.index import (
     BUFFER_SIZE,
     TAIndex,
     TAIndexConfig,
     baseline_attention,
     baseline_sdpa,
 )
-from hira.benchmark_area.quick_pruning.pruning_bench_utils import (
+from benchmark_area.quick_pruning.pruning_bench_utils import (
     CaptureState,
     _q_to_kv_map,
 )
