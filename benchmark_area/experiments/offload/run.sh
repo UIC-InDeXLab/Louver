@@ -11,8 +11,8 @@ MAX_SAMPLES=10          # 10 × 5 tasks = 50 examples → ~45 min per method at 
 MAX_INPUT_LENGTH=4096   # truncate context; index build dominates at 30k
 
 # Uncomment one method per run:
-METHOD="louver_offload"
-# METHOD="hnsw_offload"
+# METHOD="louver_offload"
+METHOD="hnsw_offload"
 # METHOD="ivf_offload"
 # METHOD="lsh_offload"
 

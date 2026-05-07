@@ -80,13 +80,59 @@ Compare Louver offload vs MagicPIG (LSH), RetrievalAttention (HNSW), InfLLM (IVF
 
 ## Important
 
-### 4. Pruning Power vs. N
-- Fraction of keys surviving filter across sequence lengths
-- Confirms the ~90% pruning claim
+### 4. Pruning Power (`experiments/pruning`)
+
+For different clustering/enclosing methods: fraction of keys surviving the halfspace gate
+and asymptotic search cost ratio vs full scan.
+
+**Metrics per method:**
+- `scanned_frac`: empirical fraction of keys passing the gate
+- `pruned_frac`: 1 − scanned_frac
+- `gate_cost_dp`: gate evaluation cost per cluster in dot-product equivalents (g)
+- `ratio`: g/r + scanned_frac — asymptotic cost relative to full scan
+- `speedup`: 1/ratio
+- `recall`: fraction of true top-k keys retrieved — always 1.000 by construction
+- `build_ms`, `search_ms`
+
+**Asymptotic cost:** `ratio = g/r + scanned_frac`
+- g/r: gate cost amortized over r children per cluster
+- scanned_frac: fraction requiring exact dot-product check
+
+**Standard methods compared:** (clustering × enclosing) pairs
+- Clusterings: kcenter, kmeans, pq_subspace, batch_nn
+- Enclosings: ball_centroid (g=1.0), aabb (g=2.0), span_ball (g=1.0)
+
+**Captures:** `quick_pruning/capture_qkv_8000_*.pt` (Llama-3.2-3B, Qwen2.5-7B, N=8k)
+
+**Workflow:** `bash experiments/pruning/run.sh --mode standard`
+- Existing quick_pruning results: `python experiments/pruning/import_existing.py`
+- Output: `experiments/pruning/results/<model>_pruning_ablation.csv`
 
 ---
 
-## Ablations (appendix)
+### 4.1. Index Design Ablations (`experiments/pruning`)
+
+Louver (subspace_kcenter) ablation over S (number of subspaces) and r (group size / branching factor).
+
+**Gate cost for Louver:** g = 1.0 regardless of S
+(S subspaces of dimension D/S → total gate work = S × D/S = D = 1 full dot equivalent)
+
+**Ablation axes:**
+- S ∈ {2, 4, 8, 16}
+- r ∈ {2, 4, 8, 16}
+- Subspace strategy: contiguous (best), interleaved, random, pca
+
+**Existing results (N=4461, r=4, Llama-3.2-3B, contiguous):**
+
+| S | scanned_frac | pruned_frac | ratio | speedup |
+|---|-------------|-------------|-------|---------|
+| 2 | 0.897 | 0.103 | 1.147 | 0.87× |
+| 4 | 0.720 | 0.280 | 0.970 | 1.03× |
+| 8 | 0.461 | 0.539 | 0.711 | 1.41× |
+| 16 | 0.163 | 0.837 | 0.413 | 2.42× |
+
+Recall = 1.000 for all. Full S×r sweep: `bash experiments/pruning/run.sh --mode louver`
+
 
 ### 7. Threshold Oracle Ablation (`experiments/threshold_oracle`)
 - Oracles: sample_max, sample_topk (k=2,5,10), sample_mean_max, sample_gap, budget (fraction=0.05/0.10/0.15)
@@ -102,14 +148,6 @@ Compare Louver offload vs MagicPIG (LSH), RetrievalAttention (HNSW), InfLLM (IVF
 
 **Workflow:** `bash threshold_oracle/run.sh` → `results/threshold_oracle_all.json` + per-model CSVs
 
-### 8. Index Design Ablations
-- Number of subspaces S
-- Group size r
-- Query 1 (full-subspace filter) vs. Query 2 (TA filter)
-
-### 9. Buffer Size B Effect
-- Update frequency vs. accuracy trade-off
-
 ---
 
 ## Notes
@@ -123,6 +161,3 @@ Compare Louver offload vs MagicPIG (LSH), RetrievalAttention (HNSW), InfLLM (IVF
     - RULER, LongBench
 - compare to long output
     - MATH, AIME
-
-### Others
-- Add a bigger model: "DeepSeek-R1-Distill-Qwen-14B"

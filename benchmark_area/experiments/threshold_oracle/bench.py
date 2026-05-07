@@ -1,15 +1,16 @@
 """
-Threshold Oracle Ablation — Experiment 8.
+Threshold Oracle Ablation — Experiment 7.
 
 Uses latency captures (saved QKV tensors) to measure for each threshold oracle:
   - fraction of keys retrieved per decode step (mean ± std)
-  - recall vs exact top-RECALL_FRAC tokens (mean ± std)
+  - precision@retrieved: fraction of retrieved keys that are in exact top-TOP_FRAC (mean ± std)
+  - timeseries: per-step score-distribution oscillation metrics + oracle tau traces
 
 No full model inference needed — operates on saved QKV tensors only.
 
 Usage:
-    python bench.py [--captures GLOB] [--n-steps 200] [--sample-size 256]
-                    [--recall-frac 0.10] [--output-dir results/]
+    python bench.py [--captures-dir DIR] [--n-steps 200] [--n-steps-ts 2000]
+                    [--sample-size 256] [--top-frac 0.10] [--output-dir results/]
 """
 from __future__ import annotations
 
@@ -62,109 +63,196 @@ def _compute_tau(sample_f16: torch.Tensor, q_f16: torch.Tensor,
 
 # ── Per-capture analysis ──────────────────────────────────────────────────────
 
+_TOPK_VALS = (8, 32, 128)
+
+
+def _score_dist_metrics(exact: torch.Tensor) -> dict:
+    """
+    exact: (H_q, N_total) float32 raw dot-product scores.
+    Returns dict matching tail_metrics.py column names (mean across heads):
+      topk_mass_{8,32,128}_mean  — fraction of softmax weight in top-k tokens
+      cov50_weight_mean          — fraction of keys to cover 50% softmax mass
+      cov50_score_mean           — fraction of keys to cover 50% shifted-score mass
+    """
+    H_q, N = exact.shape
+    probs = torch.softmax(exact, dim=-1)  # (H_q, N)
+
+    # topk_mass
+    topk_masses = {}
+    for k in _TOPK_VALS:
+        topk_masses[k] = float(
+            probs.topk(min(k, N), dim=-1).values.sum(-1).mean().item()
+        )
+
+    # cov50_weight: softmax-based (matches tail_metrics.py cov50_weight)
+    sorted_p = probs.sort(dim=-1, descending=True).values
+    k50_w = (sorted_p.cumsum(-1) < 0.5).sum(-1).float() + 1  # (H_q,)
+    cov50_weight = float((k50_w / N).mean().item())
+
+    # cov50_score: shifted-score mass (matches tail_metrics.py cov50_score)
+    s_min = exact.min(dim=-1, keepdim=True).values
+    shifted = (exact - s_min).clamp(min=0)
+    mass_s = shifted / shifted.sum(-1, keepdim=True).clamp_min(1e-12)
+    sorted_s = mass_s.sort(dim=-1, descending=True).values
+    k50_s = (sorted_s.cumsum(-1) < 0.5).sum(-1).float() + 1  # (H_q,)
+    cov50_score = float((k50_s / N).mean().item())
+
+    return {
+        **{f"topk_mass_{k}_mean": topk_masses[k] for k in _TOPK_VALS},
+        "cov50_weight_mean": cov50_weight,
+        "cov50_score_mean":  cov50_score,
+    }
+
+
+def _load_capture(capture_path: Path):
+    cap = torch.load(capture_path, map_location="cpu", weights_only=False)
+    layer_idx     = list(cap["prefill_keys"].keys())[0]
+    pre_keys_f16  = cap["prefill_keys"][layer_idx]      # (H_kv, N_pre, D)
+    gen_keys_list = cap["generated_keys"][layer_idx]    # list[(H_kv, D)]
+    gen_q_list    = cap["generated_queries"][layer_idx] # list[(H_q, D)]
+    H_kv, N_pre, D = pre_keys_f16.shape
+    H_q  = gen_q_list[0].shape[0]
+    N_gen = len(gen_keys_list)
+    g    = H_q // H_kv
+    gen_keys_stacked = torch.stack(gen_keys_list).permute(1, 0, 2).float()
+    all_keys_f32 = torch.cat([pre_keys_f16.float(), gen_keys_stacked], dim=1)
+    all_keys_f16 = all_keys_f32.half()
+    return all_keys_f32, all_keys_f16, gen_q_list, H_kv, H_q, N_pre, N_gen, g
+
+
 def analyze_capture(
     capture_path: Path,
     n_steps: int,
+    n_steps_ts: int,
     sample_size: int,
     recall_frac: float,
     seed: int = 42,
-) -> dict[str, dict]:
+) -> tuple[dict[str, dict], list[dict]]:
     """
-    Returns: oracle_name → {frac_mean, frac_std, recall_mean, recall_std, n_obs}
+    Returns: (summary, timeseries)
+      summary    : oracle_name → {frac_mean, frac_std, precision_mean, precision_std, n_obs}
+      timeseries : dense per-step rows with score-dist oscillation metrics + oracle tau means
     """
     torch.manual_seed(seed)
-    rng = np.random.RandomState(seed)
 
-    cap = torch.load(capture_path, map_location="cpu", weights_only=False)
+    all_keys_f32, all_keys_f16, gen_q_list, H_kv, H_q, N_pre, N_gen, g = \
+        _load_capture(capture_path)
 
-    layer_idx     = list(cap["prefill_keys"].keys())[0]
-    pre_keys_f16  = cap["prefill_keys"][layer_idx]          # (H_kv, N_pre, D) fp16
-    gen_keys_list = cap["generated_keys"][layer_idx]        # list[(H_kv, D)]
-    gen_q_list    = cap["generated_queries"][layer_idx]     # list[(H_q, D)]
-
-    H_kv, N_pre, D = pre_keys_f16.shape
-    H_q = gen_q_list[0].shape[0]
-    N_gen = len(gen_keys_list)
-    g = H_q // H_kv
-
-    # Build full key tensor (H_kv, N_pre + N_gen, D) float32 for exact scoring
-    gen_keys_stacked = torch.stack(gen_keys_list).permute(1, 0, 2).float()  # (H_kv, N_gen, D)
-    all_keys_f32 = torch.cat([pre_keys_f16.float(), gen_keys_stacked], dim=1)
-    all_keys_f16 = all_keys_f32.half()
-
-    # Evenly-spaced sample steps — skip the first 5% of generated tokens
     min_step = max(50, N_gen // 20)
-    step_indices = np.linspace(min_step, N_gen - 1, n_steps, dtype=int)
 
-    # Accumulate per oracle
+    # ── Pass 1: summary stats (sparse, 200 steps) ─────────────────────────────
+    step_indices = np.linspace(min_step, N_gen - 1, n_steps, dtype=int)
     data: dict[str, dict[str, list]] = {
-        name: {"fracs": [], "recalls": []} for name in ORACLE_NAMES
+        name: {"fracs": [], "precisions": []} for name in ORACLE_NAMES
     }
 
-    for step in tqdm(step_indices, desc=capture_path.stem, leave=True, dynamic_ncols=True):
-        N_total = N_pre + int(step)
-        keys_f32 = all_keys_f32[:, :N_total, :]  # (H_kv, N_total, D)
+    for step in tqdm(step_indices, desc=f"{capture_path.stem} [summary]",
+                     leave=True, dynamic_ncols=True):
+        N_total  = N_pre + int(step)
+        keys_f32 = all_keys_f32[:, :N_total, :]
         keys_f16 = all_keys_f16[:, :N_total, :]
+        q_f32    = gen_q_list[step].float()
+        q_f16    = q_f32.half()
 
-        q_f32 = gen_q_list[step].float()   # (H_q, D)
-        q_f16 = q_f32.half()
-
-        # Reservoir sample of keys (per head, same indices for all heads)
-        M = min(sample_size, N_total)
+        M   = min(sample_size, N_total)
         idx = torch.randperm(N_total)[:M]
-        sample_f16 = keys_f16[:, idx, :]   # (H_kv, M, D)
+        sample_f16 = keys_f16[:, idx, :]
 
-        # Exact scores: q[h_q] · keys[h_kv]   shape (H_q, N_total)
-        # Process head-by-head to avoid huge intermediate tensor
         exact = torch.empty(H_q, N_total)
         for h_q in range(H_q):
-            h_kv = h_q // g
-            exact[h_q] = keys_f32[h_kv] @ q_f32[h_q]  # (N_total,)
+            exact[h_q] = keys_f32[h_q // g] @ q_f32[h_q]
 
-        # Ground-truth top-recall_frac indices per H_q head
-        k_recall = max(1, int(recall_frac * N_total))
-        topk_idx = exact.topk(k_recall, dim=-1).indices  # (H_q, k_recall)
+        k_top    = max(1, int(recall_frac * N_total))
+        topk_idx = exact.topk(k_top, dim=-1).indices
         topk_sets = [set(topk_idx[h].tolist()) for h in range(H_q)]
 
-        for name, oracle_kwargs in ORACLES:
-            tau = _compute_tau(sample_f16, q_f16, sample_size, oracle_kwargs)  # (H_q,)
+        taus = {name: _compute_tau(sample_f16, q_f16, sample_size, kw)
+                for name, kw in ORACLES}
 
+        for name in ORACLE_NAMES:
+            tau = taus[name]
             for h_q in range(H_q):
                 mask = exact[h_q] >= tau[h_q].float()
                 frac = mask.float().mean().item()
                 retrieved_set = set(mask.nonzero(as_tuple=True)[0].tolist())
-                recall = len(topk_sets[h_q] & retrieved_set) / k_recall
-
+                n_ret = len(retrieved_set)
+                precision = (len(topk_sets[h_q] & retrieved_set) / n_ret
+                             if n_ret > 0 else 0.0)
                 data[name]["fracs"].append(frac)
-                data[name]["recalls"].append(recall)
+                data[name]["precisions"].append(precision)
 
     summary = {}
     for name, d in data.items():
-        fracs   = np.array(d["fracs"])
-        recalls = np.array(d["recalls"])
+        fracs      = np.array(d["fracs"])
+        precisions = np.array(d["precisions"])
         summary[name] = {
-            "frac_mean":   float(fracs.mean()),
-            "frac_std":    float(fracs.std()),
-            "recall_mean": float(recalls.mean()),
-            "recall_std":  float(recalls.std()),
-            "n_obs":       len(fracs),
+            "frac_mean":      float(fracs.mean()),
+            "frac_std":       float(fracs.std()),
+            "precision_mean": float(precisions.mean()),
+            "precision_std":  float(precisions.std()),
+            "n_obs":          len(fracs),
         }
-    return summary
+
+    # ── Pass 2: timeseries (dense, n_steps_ts steps) ──────────────────────────
+    ts_indices = np.linspace(min_step, N_gen - 1, n_steps_ts, dtype=int)
+    timeseries: list[dict] = []
+
+    for step in tqdm(ts_indices, desc=f"{capture_path.stem} [timeseries]",
+                     leave=True, dynamic_ncols=True):
+        N_total  = N_pre + int(step)
+        keys_f32 = all_keys_f32[:, :N_total, :]
+        keys_f16 = all_keys_f16[:, :N_total, :]
+        q_f32    = gen_q_list[step].float()
+        q_f16    = q_f32.half()
+
+        exact = torch.empty(H_q, N_total)
+        for h_q in range(H_q):
+            exact[h_q] = keys_f32[h_q // g] @ q_f32[h_q]
+
+        M   = min(sample_size, N_total)
+        idx = torch.randperm(N_total)[:M]
+        sample_f16 = keys_f16[:, idx, :]
+
+        taus = {name: _compute_tau(sample_f16, q_f16, sample_size, kw)
+                for name, kw in ORACLES}
+
+        ts_row: dict = {"step": int(step), "N_total": N_total}
+        ts_row.update(_score_dist_metrics(exact))
+        for name in ORACLE_NAMES:
+            ts_row[f"tau_{name}_mean"] = float(taus[name].mean().item())
+        timeseries.append(ts_row)
+
+    return summary, timeseries
 
 
 # ── CSV / print helpers ───────────────────────────────────────────────────────
 
-def print_table(model_tag: str, summary: dict[str, dict], recall_frac: float) -> None:
-    recall_pct = int(recall_frac * 100)
-    header = (f"{'Oracle':<18}  {'Frac %':>9}  {'±':>6}  "
-              f"{'Recall@{:d}%'.format(recall_pct):>12}  {'±':>6}")
+def print_table(model_tag: str, summary: dict[str, dict], top_frac: float) -> None:
+    top_pct = int(top_frac * 100)
+    header = (f"{'Oracle':<18}  {'Frac %':>8}  {'±':>5}  "
+              f"{'Prec@top{:d}%'.format(top_pct):>13}  {'±':>5}")
     print(f"\n── {model_tag} ──")
     print(header)
     print("-" * len(header))
     for name in ORACLE_NAMES:
         s = summary[name]
-        print(f"{name:<18}  {s['frac_mean']*100:>8.2f}%  {s['frac_std']*100:>5.2f}  "
-              f"{s['recall_mean']*100:>11.2f}%  {s['recall_std']*100:>5.2f}")
+        print(f"{name:<18}  {s['frac_mean']*100:>7.2f}%  {s['frac_std']*100:>4.2f}  "
+              f"{s['precision_mean']*100:>12.2f}%  {s['precision_std']*100:>4.2f}")
+
+
+def write_timeseries_csv(out_path: Path, timeseries: list[dict]) -> None:
+    if not timeseries:
+        return
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fields = list(timeseries[0].keys())
+    with open(out_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for row in timeseries:
+            writer.writerow({
+                k: f"{v:.8f}" if isinstance(v, float) else v
+                for k, v in row.items()
+            })
 
 
 def write_csv(out_path: Path, model_tag: str, summary: dict[str, dict]) -> None:
@@ -173,12 +261,12 @@ def write_csv(out_path: Path, model_tag: str, summary: dict[str, dict]) -> None:
         writer = csv.writer(f)
         writer.writerow(["model", "oracle",
                          "frac_mean", "frac_std",
-                         "recall_mean", "recall_std", "n_obs"])
+                         "precision_mean", "precision_std", "n_obs"])
         for name in ORACLE_NAMES:
             s = summary[name]
             writer.writerow([model_tag, name,
                              f"{s['frac_mean']:.6f}", f"{s['frac_std']:.6f}",
-                             f"{s['recall_mean']:.6f}", f"{s['recall_std']:.6f}",
+                             f"{s['precision_mean']:.6f}", f"{s['precision_std']:.6f}",
                              s["n_obs"]])
 
 
@@ -189,11 +277,13 @@ def main():
     parser.add_argument("--captures-dir", default=str(CAPTURES_DIR),
                         help="Directory containing .pt capture files")
     parser.add_argument("--n-steps",    type=int,   default=200,
-                        help="Decode steps to sample per capture")
+                        help="Decode steps to sample per capture (summary stats)")
+    parser.add_argument("--n-steps-ts", type=int,  default=2000,
+                        help="Decode steps for dense timeseries (oscillation plot)")
     parser.add_argument("--sample-size", type=int,  default=256,
                         help="Reservoir sample size for threshold estimation")
-    parser.add_argument("--recall-frac", type=float, default=0.10,
-                        help="Fraction of top keys used as recall target (default 10%%)")
+    parser.add_argument("--top-frac", type=float, default=0.10,
+                        help="Fraction of top keys used as precision target (default 10%%)")
     parser.add_argument("--output-dir", default=str(RESULTS_DIR))
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -212,20 +302,25 @@ def main():
         model_tag = cap_path.stem
         print(f"\n=== {model_tag} ===")
 
-        summary = analyze_capture(
+        summary, timeseries = analyze_capture(
             cap_path,
             n_steps=args.n_steps,
+            n_steps_ts=args.n_steps_ts,
             sample_size=args.sample_size,
-            recall_frac=args.recall_frac,
+            recall_frac=args.top_frac,
             seed=args.seed,
         )
         all_summaries[model_tag] = summary
 
-        print_table(model_tag, summary, args.recall_frac)
+        print_table(model_tag, summary, args.top_frac)
 
         csv_path = output_dir / f"{model_tag}_threshold_oracle.csv"
         write_csv(csv_path, model_tag, summary)
         print(f"  → {csv_path}")
+
+        ts_path = output_dir / f"{model_tag}_timeseries.csv"
+        write_timeseries_csv(ts_path, timeseries)
+        print(f"  → {ts_path}")
 
     # Combined JSON
     json_path = output_dir / "threshold_oracle_all.json"
